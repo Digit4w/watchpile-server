@@ -18,7 +18,18 @@ function resolvePlatformDir() {
 
 /** @type {import('electron-builder').Configuration} */
 const config = {
-  appId: 'com.fernandoenf.watchpile',
+  /**
+   * **O `appId` é a identidade do INSTALADOR, e mudá-lo tem prazo.** É por ele
+   * que o instalador NSIS reconhece uma instalação existente e a substitui em
+   * vez de duplicar. Trocá-lo hoje é grátis porque a única instalação que
+   * existe é a de teste do dono, e a release que a produziu vai ser apagada
+   * junto com o repositório antigo; trocá-lo depois faria toda instalação lá
+   * fora virar uma segunda cópia lado a lado.
+   *
+   * Não move o banco: quem decide `app.getPath('userData')` é o `productName`,
+   * que continua `Watchpile`.
+   */
+  appId: 'com.digit4w.watchpile',
   productName: 'Watchpile',
   asar: false,
   /**
