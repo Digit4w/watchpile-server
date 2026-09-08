@@ -1,0 +1,23 @@
+# Git hooks do Watchpile — server
+# Convenção de commits: ../.claude/commit-convention.md
+#
+# Instalado automaticamente após `bun install` (script "prepare" do package.json).
+# Rodar um hook manualmente:  bunx lefthook run pre-commit
+# Pular numa emergência:      git commit --no-verify
+
+commit-msg:
+  jobs:
+    - name: convention
+      run: sh scripts/validate-commit-msg.sh {1}
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: lint
+      glob: "*.{ts,js,json}"
+      run: ./node_modules/.bin/biome check --no-errors-on-unmatched {staged_files}
+
+pre-push:
+  jobs:
+    - name: test
+      run: ./node_modules/.bin/vitest run

@@ -1,0 +1,1 @@
+ALTER TABLE `piles` ADD `description` text;

@@ -1,0 +1,1 @@
+ALTER TABLE `home_widgets` ADD `title` text;

@@ -1,0 +1,27 @@
+node_modules/
+dist/
+dist-electron/
+builds/
+.vscode/
+
+# staging do build do client pro Docker — populado pelo CI ou manualmente
+# (README, seção Docker), nunca comitado. .gitkeep mantém a pasta rastreada.
+client-dist/*
+!client-dist/.gitkeep
+
+*.db
+*.db-wal
+*.db-shm
+
+# cache de arte em disco — regenerável por definição (brief, 3.10), e é o que
+# faz o `/data` do container ser um volume só. Nunca comitado.
+data/art/
+data/art-test/
+
+.env
+.env.local
+
+*.log
+
+# artefato do `tsc -b` (build incremental) — local, nunca versionado
+*.tsbuildinfo

@@ -1,0 +1,20 @@
+-- **`asks_total` sai** — 07/09/2026, decisão do dono.
+--
+-- Ele existia desde a `0006` e dizia se a folha de criar obra pergunta o total.
+-- A `0043` separou dele o `counts_progress`, e o que sobrou não tinha uso
+-- legítimo: o campo de total **já é opcional**, então deixá-lo em branco produz
+-- o mesmo `NULL` que `asks_total = 0` produzia — e o `0` tirava a capacidade de
+-- registrar um total que É conhecido.
+--
+-- O caso que derrubou: um webnovel TERMINADO tem número de capítulos, e num
+-- tipo com `asks_total = 0` não havia onde escrevê-lo. **Quem responde "esta
+-- obra tem fim conhecido?" é `entries.total`, que é por OBRA** — é lá que a
+-- pergunta pertence, e é lá que ela sempre esteve.
+--
+-- Some junto o estado `counts_progress = 0, asks_total = 1`, que os dados
+-- conseguiam expressar e o produto ignorava.
+--
+-- **Nenhum dado de `entries` é tocado.** Filme e jogo continuam nascendo com
+-- `total = 1` (agora por `counts_progress` só), e `entries.total` continua
+-- nulável, que é o `12 / ?` da 3.11.
+ALTER TABLE `media_types` DROP COLUMN `asks_total`;

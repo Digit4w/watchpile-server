@@ -1,0 +1,59 @@
+-- O VÍNCULO entre obras do mesmo provedor.
+--
+-- O `parent_game` do IGDB parecia campo dele. Medido, é o **caso degenerado**
+-- de um conceito que três dos seis têm, e os outros dois têm em forma mais
+-- rica:
+--
+--   IGDB     parent_game            um vínculo, tipo implícito
+--   AniList  relations.edges[]      ADAPTATION, PREQUEL, SEQUEL + nó
+--   Kitsu    endpoint separado      role + destino, ligados por id
+--
+-- Modelar "pai" caberia no IGDB e jogaria fora o que os outros já entregam —
+-- seria refeito no primeiro anime. É **lista com tipo**, e o IGDB é lista de um.
+--
+-- ── As duas peças que isso cobrou, e as duas são DADO ──────────────────────
+--
+-- **`provider_type_token`** (migration `0028`) resolve o tipo do nó. Um vínculo
+-- atravessa tipo — o `ADAPTATION` de um anime aponta pra um mangá —, e a rota de
+-- detalhe precisa do nosso slug. O provedor devolve o token dele (`MANGA` no
+-- AniList, `manga` no Kitsu); a junção diz a que tipo corresponde. Escrever
+-- `MANGA → manga` em código seria o `if (slug === …)` que a 3.10 recusa.
+--
+-- **`relations_path`** (mesma migration) é `units_path` estendido: o Kitsu serve
+-- relação em endpoint separado, enquanto os outros dois a devolvem no detalhe
+-- que já foi buscado. Nulo significa "leia do corpo do detalhe", não "não há
+-- vínculo" — quem diz que não há é a ausência de `relations` no mapa.
+--
+-- ── A junção JSON:API ──────────────────────────────────────────────────────
+--
+-- O Kitsu separa `role` (em `data[]`) do destino (em `included[]`), ligados por
+-- `{type, id}`. O leitor de caminho pontuado anda em objeto e não casa
+-- referência, então `includeRef` no mapa declara a ligação. **JSON:API é um
+-- padrão, não uma esquisitice de um provedor** — e este já declara falar o
+-- dialeto em `endpoints.accept`; a junção é a outra metade dessa declaração.
+--
+-- ── O que MUDA nos endpoints, e por quê ────────────────────────────────────
+--
+-- O IGDB e o AniList ganham lista de campos só do DETALHE. Puxar vínculo para
+-- cada um de vinte resultados de busca infla a resposta por um dado que aquela
+-- tela não mostra — é a mesma razão pela qual `relations` não entra em mapa de
+-- busca nenhum.
+--
+-- Gerado por `scripts/print-provider-seed.ts <slug> --update` e
+-- `--update --provider-only`.
+
+UPDATE `providers` SET `endpoints` = '{"search":{"path":"/anime","queryParam":"filter[text]","query":{"page[limit]":"20"},"resultsPath":"data"},"detail":{"path":"/anime/{id}"},"test":{"path":"/anime","query":{"page[limit]":"1"}},"accept":"application/vnd.api+json"}', `field_map` = '{"externalId":"id","title":"attributes.canonicalTitle","year":"attributes.startDate","art":"attributes.posterImage.medium","synopsis":"attributes.synopsis","subtype":"attributes.subtype"}', `rate_limit` = '{"perSecond":3,"burst":5}', `timeout_ms` = 30000 WHERE `slug` = 'kitsu';
+--> statement-breakpoint
+UPDATE `media_type_providers` SET `search_path` = '/anime', `search_body` = NULL, `field_map` = '{"externalId":"id","title":"attributes.canonicalTitle","year":"attributes.startDate","total":"attributes.episodeCount","art":"attributes.posterImage.medium","synopsis":"attributes.synopsis","subtype":"attributes.subtype"}', `detail_path` = '/anime/{id}', `detail_body` = NULL, `detail_field_map` = '{"externalId":"data.id","title":"data.attributes.canonicalTitle","year":"data.attributes.startDate","total":"data.attributes.episodeCount","art":"data.attributes.posterImage.medium","synopsis":"data.attributes.synopsis","subtype":"data.attributes.subtype","relations":{"path":"data","kind":"attributes.role","includeRef":"relationships.destination.data","id":"id","title":"attributes.canonicalTitle","art":"attributes.posterImage.medium","year":"attributes.startDate","typeToken":"type"},"links":[{"label":"Kitsu","path":"data.attributes.slug","template":"https://kitsu.app/anime/{id}"}]}', `provider_type_token` = 'anime', `relations_path` = '/anime/{id}/media-relationships?include=destination&page[limit]=20', `units_path` = '/anime/{id}/episodes?page[limit]=20', `unit_map` = '{"number":"attributes.number","title":"attributes.canonicalTitle","synopsis":"attributes.synopsis","art":"attributes.thumbnail.original","date":"attributes.airdate","runtime":"attributes.length"}' WHERE `media_type_slug` = 'anime' AND `provider_slug` = 'kitsu';
+--> statement-breakpoint
+UPDATE `media_type_providers` SET `search_path` = '/manga', `search_body` = NULL, `field_map` = '{"externalId":"id","title":"attributes.canonicalTitle","year":"attributes.startDate","total":"attributes.chapterCount","art":"attributes.posterImage.medium","synopsis":"attributes.synopsis","subtype":"attributes.subtype"}', `detail_path` = '/manga/{id}', `detail_body` = NULL, `detail_field_map` = '{"externalId":"data.id","title":"data.attributes.canonicalTitle","year":"data.attributes.startDate","total":"data.attributes.chapterCount","art":"data.attributes.posterImage.medium","synopsis":"data.attributes.synopsis","subtype":"data.attributes.subtype","relations":{"path":"data","kind":"attributes.role","includeRef":"relationships.destination.data","id":"id","title":"attributes.canonicalTitle","art":"attributes.posterImage.medium","year":"attributes.startDate","typeToken":"type"},"links":[{"label":"Kitsu","path":"data.attributes.slug","template":"https://kitsu.app/manga/{id}"}]}', `provider_type_token` = 'manga', `relations_path` = '/manga/{id}/media-relationships?include=destination&page[limit]=20', `units_path` = NULL, `unit_map` = NULL WHERE `media_type_slug` = 'manga' AND `provider_slug` = 'kitsu';
+--> statement-breakpoint
+UPDATE `providers` SET `endpoints` = '{"search":{"path":"/","queryParam":"","resultsPath":"data.Page.media","body":{"kind":"json","value":{"query":"query ($search: String, $type: MediaType) { Page(page: 1, perPage: 20) { media(search: $search, type: $type, sort: SEARCH_MATCH) { id title { romaji english } startDate { year } coverImage { large } description(asHtml: false) episodes chapters format } } }","variables":{"search":"{term}","type":"ANIME"}}}},"detail":{"path":"/","body":{"kind":"json","value":{"query":"query ($id: Int, $type: MediaType) { Media(id: $id, type: $type) { id title { romaji english } startDate { year } coverImage { large } description(asHtml: false) episodes chapters format siteUrl relations { edges { relationType node { id type title { romaji } coverImage { large } startDate { year } } } } } }","variables":{"id":"{id}","type":"ANIME"}}}},"test":{"path":"/","body":{"kind":"json","value":{"query":"query { Page(perPage: 1) { media(id: 1) { id } } }"}}},"textFormat":"html"}', `field_map` = '{"externalId":"id","title":"title.romaji","year":"startDate.year","art":"coverImage.large","synopsis":"description","subtype":"format"}', `rate_limit` = '{"perSecond":0.5,"burst":5}', `timeout_ms` = 10000 WHERE `slug` = 'anilist';
+--> statement-breakpoint
+UPDATE `media_type_providers` SET `search_path` = NULL, `search_body` = '{"kind":"json","value":{"query":"query ($search: String, $type: MediaType) { Page(page: 1, perPage: 20) { media(search: $search, type: $type, sort: SEARCH_MATCH) { id title { romaji english } startDate { year } coverImage { large } description(asHtml: false) episodes chapters format } } }","variables":{"search":"{term}","type":"ANIME"}}}', `field_map` = '{"externalId":"id","title":"title.romaji","year":"startDate.year","total":"episodes","art":"coverImage.large","synopsis":"description","subtype":"format"}', `detail_path` = NULL, `detail_body` = '{"kind":"json","value":{"query":"query ($id: Int, $type: MediaType) { Media(id: $id, type: $type) { id title { romaji english } startDate { year } coverImage { large } description(asHtml: false) episodes chapters format siteUrl relations { edges { relationType node { id type title { romaji } coverImage { large } startDate { year } } } } } }","variables":{"id":"{id}","type":"ANIME"}}}', `detail_field_map` = '{"externalId":"data.Media.id","title":"data.Media.title.romaji","year":"data.Media.startDate.year","total":"data.Media.episodes","art":"data.Media.coverImage.large","synopsis":"data.Media.description","subtype":"data.Media.format","relations":{"path":"data.Media.relations.edges","kind":"relationType","id":"node.id","title":"node.title.romaji","art":"node.coverImage.large","year":"node.startDate.year","typeToken":"node.type"},"links":[{"label":"AniList","path":"data.Media.siteUrl"}]}', `provider_type_token` = 'ANIME', `relations_path` = NULL, `units_path` = NULL, `unit_map` = NULL WHERE `media_type_slug` = 'anime' AND `provider_slug` = 'anilist';
+--> statement-breakpoint
+UPDATE `media_type_providers` SET `search_path` = NULL, `search_body` = '{"kind":"json","value":{"query":"query ($search: String, $type: MediaType) { Page(page: 1, perPage: 20) { media(search: $search, type: $type, sort: SEARCH_MATCH) { id title { romaji english } startDate { year } coverImage { large } description(asHtml: false) episodes chapters format } } }","variables":{"search":"{term}","type":"MANGA"}}}', `field_map` = '{"externalId":"id","title":"title.romaji","year":"startDate.year","total":"chapters","art":"coverImage.large","synopsis":"description","subtype":"format"}', `detail_path` = NULL, `detail_body` = '{"kind":"json","value":{"query":"query ($id: Int, $type: MediaType) { Media(id: $id, type: $type) { id title { romaji english } startDate { year } coverImage { large } description(asHtml: false) episodes chapters format siteUrl relations { edges { relationType node { id type title { romaji } coverImage { large } startDate { year } } } } } }","variables":{"id":"{id}","type":"MANGA"}}}', `detail_field_map` = '{"externalId":"data.Media.id","title":"data.Media.title.romaji","year":"data.Media.startDate.year","total":"data.Media.chapters","art":"data.Media.coverImage.large","synopsis":"data.Media.description","subtype":"data.Media.format","relations":{"path":"data.Media.relations.edges","kind":"relationType","id":"node.id","title":"node.title.romaji","art":"node.coverImage.large","year":"node.startDate.year","typeToken":"node.type"},"links":[{"label":"AniList","path":"data.Media.siteUrl"}]}', `provider_type_token` = 'MANGA', `relations_path` = NULL, `units_path` = NULL, `unit_map` = NULL WHERE `media_type_slug` = 'manga' AND `provider_slug` = 'anilist';
+--> statement-breakpoint
+UPDATE `providers` SET `endpoints` = '{"search":{"path":"/games","queryParam":"","body":{"kind":"apicalypse","template":"search \"{term}\"; fields name,cover.image_id,first_release_date,summary,total_rating,total_rating_count,url,game_type.type; limit 20;"}},"detail":{"path":"/games","body":{"kind":"apicalypse","template":"fields name,cover.image_id,first_release_date,summary,total_rating,total_rating_count,url,game_type.type,parent_game.name,parent_game.cover.image_id,parent_game.first_release_date; where id = {id};"}},"test":{"path":"/games","body":{"kind":"apicalypse","template":"fields id; limit 1;"}}}', `field_map` = '{"externalId":"id","title":"name","subtype":"game_type.type","year":"first_release_date","yearFormat":"unix-seconds","art":"cover.image_id","synopsis":"summary"}', `rate_limit` = '{"perSecond":4,"burst":8}', `timeout_ms` = 10000 WHERE `slug` = 'igdb';
+--> statement-breakpoint
+UPDATE `media_type_providers` SET `search_path` = NULL, `search_body` = NULL, `field_map` = NULL, `detail_path` = NULL, `detail_body` = NULL, `detail_field_map` = '{"externalId":"0.id","title":"0.name","subtype":"0.game_type.type","year":"0.first_release_date","yearFormat":"unix-seconds","art":"0.cover.image_id","synopsis":"0.summary","relations":{"path":"0.parent_game","kindConst":"parent","id":"id","title":"name","art":"cover.image_id","year":"first_release_date","yearFormat":"unix-seconds"},"links":[{"label":"IGDB","path":"0.url"}]}', `provider_type_token` = NULL, `relations_path` = NULL, `units_path` = NULL, `unit_map` = NULL WHERE `media_type_slug` = 'game' AND `provider_slug` = 'igdb';

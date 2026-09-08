@@ -1,0 +1,23 @@
+-- `Jikan (MyAnimeList)` → `Jikan`. Uma coluna, e o motivo não é estético.
+--
+-- O parêntese existia pra que creditar só o Jikan não escondesse que os dados
+-- são do MyAnimeList. Isso é verdade — e é **exatamente o que `attribution` já
+-- diz**, na mesma linha da tabela: "Data from MyAnimeList, via the Jikan API."
+-- A mesma informação morava em dois campos, e a cópia redundante era a que
+-- cobrava o preço.
+--
+-- Medido a 12px, que é o tamanho em que o nome de provedor aparece no menu de
+-- escopo: `Jikan (MyAnimeList)` ocupa 114px contra 35 do TMDB, 28 do Kitsu e 73
+-- do Open Library — três a quatro vezes os outros. Isso espremia o nome do TIPO
+-- a 40px numa fileira de 240 e o truncava (`Ani...`), e justamente na linha
+-- ATIVA, que é a única que carrega o check e o provedor longo ao mesmo tempo.
+--
+-- A régua: **nome identifica, atribuição credita — e um não faz o trabalho do
+-- outro.** A decisão "provedor se identifica pelo NOME" (design system, seção
+-- 5) foi tomada contando caracteres e afirmando que em nenhum dos quatro
+-- lugares onde o nome aparece falta espaço pra palavra. Um nome que carrega
+-- crédito dentro de si desmente essa conta.
+--
+-- `attribution` não muda: ele é quem sempre disse isso, e continua dizendo.
+
+UPDATE `providers` SET `name` = 'Jikan' WHERE `slug` = 'jikan';

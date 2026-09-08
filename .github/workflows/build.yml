@@ -1,0 +1,267 @@
+name: build
+
+# Valida o build combinado (server + client num artefato só). Só push na main
+# publica: a Release do GitHub com os instaladores Electron (mac/windows/linux)
+# e a imagem no GHCR — dev fica só validando, porque recebe muito update
+# (server/CLAUDE.md, "Plano de distribuição").
+#
+# ── O REGISTRO é o GHCR, e é decisão de FASE (08/09/2026) ────────────────────
+# O Docker Hub é o que o público de homelab espera achar num README, e continua
+# sendo o destino — quando isto deixar de ser versão de teste. O GHCR entra
+# agora porque ele não pede credencial nova: `GITHUB_TOKEN` já existe no runner,
+# e a imagem nasce ao lado do repositório que a produz. Decisão do dono.
+#
+# ── O QUE RODA ONDE, E POR QUÊ (29/08/2026) ──────────────────────────────────
+# Antes disto, todo PR pra dev rodava a matriz inteira e subia ~384 MB de
+# instalador. Duas contas estouraram: o armazenamento de Actions do plano
+# gratuito (500 MB) — e quando ele estoura o job FALHA no upload, deixando o CI
+# vermelho por motivo nenhum — e os minutos, porque runner macOS conta 10x e
+# sozinho respondia por ~70% da fatura.
+#
+#   PR / dev   electron só no ubuntu, docker só amd64, nenhum artefato
+#   main       matriz completa, multi-arch, artefatos que viram release
+#
+# O que se perde: quebra de empacotamento específica de macOS/Windows só
+# aparece ao promover. É o preço aceito — a matriz completa continua guardando
+# a main, que é de onde sai release.
+on:
+  pull_request:
+    branches: [dev, main]
+    paths-ignore: ['**.md']
+  push:
+    branches: [dev, main]
+    paths-ignore: ['**.md']
+  workflow_dispatch:
+
+jobs:
+  docker:
+    name: docker image
+    runs-on: ubuntu-latest
+    # `packages: write` só é usado no push da main; declarar aqui é o escopo
+    # mínimo do job, e o GITHUB_TOKEN dele não alcança mais nada.
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: checkout watchpile-server
+        uses: actions/checkout@v4
+        with:
+          path: server
+
+      # sem ref explícito isso pega a branch default (main) do client — a
+      # mais desatualizada. dev/main daqui seguem o mesmo alvo de integração
+      # que disparou este build (base_ref no PR, ref_name no push).
+      - name: checkout watchpile-client
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/watchpile-client
+          ref: ${{ github.base_ref || github.ref_name }}
+          token: ${{ secrets.CLIENT_REPO_TOKEN }}
+          path: client
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: build client
+        working-directory: client
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      - name: stage client build for the Docker image
+        run: cp -r client/dist/* server/client-dist/
+
+      # ── As credenciais embarcadas entram AQUI, e só aqui ─────────────────
+      # `providers.embedded.ts` guarda literais vazios no repositório; este
+      # passo os preenche a partir de secrets, imediatamente antes de empacotar.
+      # Ver o cabeçalho daquele arquivo para o que a escolha compra e o que ela
+      # custa.
+      #
+      # **Só na main**, porque é o único lugar que publica: um PR não precisa da
+      # chave pra provar que o build está de pé, e não gastar cota em validação
+      # é metade do motivo de a chave não estar na fonte.
+      #
+      # Secret ausente NÃO derruba nada — a instalação degrada para "configure a
+      # sua", que é o modo de falha aceito desde 30/08/2026. O log diz qual
+      # faltou, pelo NOME.
+      - name: embed provider credentials
+        if: github.ref == 'refs/heads/main'
+        working-directory: server
+        env:
+          EMBED_TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          EMBED_MAL_CLIENT_ID: ${{ secrets.MAL_CLIENT_ID }}
+        run: node scripts/embed-credentials.mjs
+
+
+      # QEMU só quando há arm64 pra emular — é o passo mais lento do job, e
+      # emular fora da main não paga: o Dockerfile não tem nada por arquitetura.
+      - uses: docker/setup-qemu-action@v3
+        if: github.ref == 'refs/heads/main'
+      - uses: docker/setup-buildx-action@v3
+
+      # O nome do pacote no GHCR tem que ser MINÚSCULO, e o dono do repositório
+      # nem sempre é. Resolver isto no shell é o que faz o workflow seguir o
+      # repositório quando ele muda de dono — que é a mesma razão pela qual o
+      # checkout do client acima usa `github.repository_owner` em vez do nome.
+      - name: resolve image name and version
+        if: github.ref == 'refs/heads/main'
+        id: image
+        run: |
+          echo "repo=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/watchpile" >> "$GITHUB_OUTPUT"
+          echo "version=$(node -p "require('./server/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: log in to GHCR
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Fora da main o passo é o de sempre: BUILDA e não publica. É ele que faz
+      # todo PR provar que o Dockerfile continua de pé sem gastar registro.
+      - name: build image
+        uses: docker/build-push-action@v6
+        with:
+          context: server
+          platforms: ${{ github.ref == 'refs/heads/main' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
+          push: ${{ github.ref == 'refs/heads/main' }}
+          # Duas tags e não uma: `:x.y.z` é o que se fixa num `compose.yaml` que
+          # não pode mudar sozinho, e `:latest` é o que o README manda copiar.
+          # Quem hospeda escolhe entre as duas, e a escolha é sobre atualizar.
+          tags: ${{ github.ref == 'refs/heads/main' && format('{0}:{1},{0}:latest', steps.image.outputs.repo, steps.image.outputs.version) || '' }}
+
+  electron:
+    name: electron (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      # Fora da main empacota só no ubuntu (1x). macOS custa 10x e Windows 2x,
+      # e o que eles validam a mais é empacotamento por plataforma — que a main
+      # ainda cobre, antes de qualquer release sair.
+      matrix:
+        os: ${{ github.ref == 'refs/heads/main' && fromJSON('["macos-latest", "windows-latest", "ubuntu-latest"]') || fromJSON('["ubuntu-latest"]') }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: checkout watchpile-server
+        uses: actions/checkout@v4
+        with:
+          path: server
+
+      # sem ref explícito isso pega a branch default (main) do client — a
+      # mais desatualizada. dev/main daqui seguem o mesmo alvo de integração
+      # que disparou este build (base_ref no PR, ref_name no push).
+      - name: checkout watchpile-client
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/watchpile-client
+          ref: ${{ github.base_ref || github.ref_name }}
+          token: ${{ secrets.CLIENT_REPO_TOKEN }}
+          path: client
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: install client dependencies
+        working-directory: client
+        run: bun install --frozen-lockfile
+
+      - name: install server dependencies
+        working-directory: server
+        run: bun install --frozen-lockfile
+
+      # Mesma substituição do job docker: o instalador embute o servidor, então
+      # a chave precisa entrar aqui também. Ver o cabeçalho de
+      # `providers.embedded.ts`.
+      - name: embed provider credentials
+        if: github.ref == 'refs/heads/main'
+        working-directory: server
+        env:
+          EMBED_TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          EMBED_MAL_CLIENT_ID: ${{ secrets.MAL_CLIENT_ID }}
+        run: node scripts/embed-credentials.mjs
+
+      # builda o client, compila o wrapper, copia migrations e empacota —
+      # electron-builder detecta a plataforma do runner e recompila
+      # better-sqlite3 pro ABI do Electron sozinho (mesmo script do dev local,
+      # server/scripts/prepare-electron-dist.mjs + package.json "electron:build").
+      # O canal (preview/dev, stable/main) e a pasta por plataforma são
+      # resolvidos dentro de electron-builder.config.mjs a partir de
+      # GITHUB_REF_NAME — daí sai builds/<mac|windows|linux>/<preview|stable>/.
+      - name: build electron package
+        working-directory: server
+        run: bun run electron:build
+
+      - name: resolve channel
+        id: channel
+        shell: bash
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "name=stable" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=preview" >> "$GITHUB_OUTPUT"
+          fi
+
+      # exatamente <plataforma>/<canal>/<arquivo> -- ** pegaria também os
+      # binários soltos dentro de win-unpacked/ (Watchpile.exe, elevate.exe),
+      # que não são instaladores e não deviam virar asset de release.
+      # Só na main. Fora dela ninguém baixa esses instaladores, e eram eles
+      # que enchiam a cota de armazenamento até o upload começar a falhar.
+      - name: upload artifact
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: watchpile-${{ steps.channel.outputs.name }}-${{ matrix.os }}
+          path: |
+            server/builds/*/*/*.dmg
+            server/builds/*/*/*.exe
+            server/builds/*/*/*.AppImage
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-release:
+    name: publish GitHub release (main only)
+    needs: electron
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: checkout watchpile-server
+        uses: actions/checkout@v4
+        with:
+          path: server
+
+      # baixa os três instaladores (mac/windows/linux) num diretório só —
+      # cada leg da matriz do job "electron" já rodou com CHANNEL=stable
+      # aqui, porque este job só dispara em push na main.
+      - name: download platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: watchpile-stable-*
+          path: dist-release
+          merge-multiple: true
+
+      # ── UMA release por VERSÃO, não por push — 08/09/2026 ──────────────
+      # O run number saiu da tag. Ele existia enquanto o `package.json` estava
+      # em `0.0.0` e a tag precisava de algo que a diferenciasse; com a versão
+      # significando alguma coisa, quem decide que há release nova é ELA.
+      #
+      # A consequência é assumida: repromover a main sem subir a versão
+      # ATUALIZA os artefatos da release existente em vez de criar outra. Cortar
+      # uma release nova é subir o `package.json` — que é o gesto que declara
+      # que mudou o que o testador está rodando.
+      - name: resolve release tag
+        id: tag
+        working-directory: server
+        run: echo "name=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          files: dist-release/**/*
+          draft: false
+          # `0.x` já é o contrato legível por máquina de "quebra sem aviso", e
+          # o pre-release é o legível por humano. O que justifica os dois é que
+          # **não há teste de upgrade de migration entre versões** — e é isso,
+          # não a quantidade de features, que define o risco de quem já tem
+          # centenas de obras importadas.
+          prerelease: true
