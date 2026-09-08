@@ -219,7 +219,20 @@ jobs:
   publish-release:
     name: publish GitHub release (main only)
     needs: electron
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # `push` OU `workflow_dispatch`, e o segundo entrou em 08/09/2026.
+    #
+    # A condição existia pra impedir que um run de PR criasse release, e fazia
+    # isso — mas de quebra tirava a única forma de RE-cortar uma release sem
+    # inventar um commit. Com `paths-ignore: ['**.md']`, uma promoção que só
+    # mexe em documentação nem dispara; sem o disparo manual, publicar passava a
+    # depender de existir uma mudança de código, que é acoplamento que ninguém
+    # escolheu.
+    #
+    # O que a condição protege continua protegido: `pull_request` segue de fora,
+    # e o `github.ref == 'refs/heads/main'` continua sendo quem decide.
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     permissions:
       contents: write
