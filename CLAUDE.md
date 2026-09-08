@@ -1803,7 +1803,7 @@ a FASE. O GHCR entra agora porque **não pede credencial nova** — o
 a produz; publicar no Docker Hub exigiria um secret a mais para uma versão que
 ainda vai quebrar sozinha.
 
-Imagem: `ghcr.io/fernandoenf/watchpile`, com **duas tags** — `:x.y.z` é o que
+Imagem: `ghcr.io/digit4w/watchpile`, com **duas tags** — `:x.y.z` é o que
 se fixa num `compose.yaml` que não pode mudar sozinho, `:latest` é o que o
 README manda copiar. Quem hospeda escolhe entre as duas, e a escolha é sobre
 atualizar.

@@ -9,12 +9,21 @@ espírito de Yamtrack, Trakt e Suwayomi. Um servidor, múltiplos clientes: este
 repositório expõe uma API HTTP documentada (`openapi.json`) e, por padrão,
 também serve o cliente web oficial.
 
-> **Estado atual:** projeto em desenvolvimento inicial, sem release publicada.
-> Este README documenta como o projeto **vai** ser distribuído e como rodá-lo
-> **a partir do código-fonte** hoje. Quando existir imagem publicada no Docker
-> Hub e instalador do desktop, as seções abaixo trocam de "build local" para
-> "baixe e rode" — a estrutura já está pronta para isso, e a tabela acima
-> ganha colunas de download real (Stable/Preview), como no Suwayomi.
+> **Estado atual: `v0.1.0`, a primeira versão pública de teste.** Há imagem
+> publicada e instaladores prontos — as seções abaixo abrem por eles, e o build
+> a partir do código-fonte continua documentado logo em seguida.
+>
+> **"Alpha" aqui não é modéstia, e o motivo é específico: não existe teste de
+> upgrade de migration entre versões.** Uma instalação que pule uma release
+> aplica as migrations em sequência e ninguém prova que a sequência funciona.
+> Quem tem centenas de obras importadas é quem mais sente se der errado —
+> **faça backup do `.db` antes de atualizar** (ver [Backup](#backup)). O `0.x`
+> do versionamento é o mesmo aviso, em forma legível por máquina.
+>
+> Duas coisas que você vai encontrar antes de qualquer feature: **nada é
+> assinado** (o Windows avisa que o publicador é desconhecido; o macOS só abre
+> com botão direito → Abrir) e **não há atualização automática** — saber que
+> saiu versão nova e baixar é manual.
 
 ## Formas de usar o Watchpile
 
@@ -23,30 +32,45 @@ quer sobre o processo, não por "qual é melhor".
 
 ### Docker (recomendado para homelab)
 
-Um container só, com a API e o cliente web juntos. `docker compose up` e
-acabou — sem container de banco separado, o SQLite é um arquivo no volume.
+Um container só, com a API e o cliente web juntos. Sem container de banco
+separado — o SQLite é um arquivo no volume.
+
+```bash
+docker run -d --name watchpile -p 3210:3210 -v ./data:/data \
+  ghcr.io/digit4w/watchpile:0.1.0
+```
+
+Ou baixe só o `compose.yaml` deste repositório e troque `build: .` por
+`image: ghcr.io/digit4w/watchpile:0.1.0`. **Não precisa clonar nada** — a
+imagem já traz o cliente web embutido.
+
+**Duas tags, e a escolha é sobre atualizar:** `:0.1.0` é o que se fixa num
+`compose.yaml` que não pode mudar sozinho; `:latest` acompanha. Enquanto o
+projeto estiver em `0.x`, `:latest` pode trazer mudança que quebra — ver o
+aviso lá em cima.
+
+<details>
+<summary><b>Buildar a imagem a partir do código-fonte</b></summary>
+
+`docker compose up --build` sozinho sobe a **API sem o cliente web** —
+`client-dist/` neste repositório é um diretório vazio de propósito: server e
+client são repositórios separados, sem monorepo. Pra embutir o cliente:
 
 ```bash
 git clone https://github.com/Digit4w/watchpile-server.git
-cd watchpile-server
-docker compose up --build
-```
-
-Só isso sobe a **API sem o cliente web** — `client-dist/` neste repositório é
-um diretório vazio de propósito: server e client são repositórios separados,
-sem monorepo. Pra ter o cliente embutido na imagem também, builde-o e o
-coloque lá antes:
-
-```bash
-git clone https://github.com/Digit4w/watchpile-client.git ../watchpile-client
-cd ../watchpile-client && bun install && bun run build && cd -
+git clone https://github.com/Digit4w/watchpile-client.git
+cd watchpile-client && bun install && bun run build && cd ../watchpile-server
 cp -r ../watchpile-client/dist/* client-dist/
 docker compose up --build
 ```
 
-**Quando existir imagem publicada no Docker Hub**, isso já vem pronto — é
-exatamente o que o CI faz antes de publicar (`.github/workflows/build.yml`).
-`docker compose up` sozinho, sem clonar o cliente, passa a ser suficiente.
+É exatamente o que o CI faz antes de publicar (`.github/workflows/build.yml`).
+
+**Uma imagem buildada por você não traz as chaves de provedor embarcadas** —
+elas entram no build a partir de secrets, e uma instalação sem elas pede a sua
+própria em Settings, que é o modo de falha previsto.
+
+</details>
 
 O `compose.yaml` do repositório já traz um exemplo funcional. Variáveis mais
 comuns de ajustar:
@@ -62,22 +86,12 @@ Volume único, `/data`, com o banco e (futuramente) o cache de arte dentro —
 mapeie só ele. `HEALTHCHECK` embutido no `Dockerfile` para Dockge, Portainer e
 Watchtower.
 
-**Backup:** com o banco em modo WAL, **não copie o arquivo `.db` com o
-container rodando** — o resultado pode vir corrompido ou sem as transações
-mais recentes. Use `VACUUM INTO` pelo SQLite:
+Backup tem seção própria — ver [Backup](#backup), abaixo.
 
-```bash
-docker compose exec -u watchpile watchpile sqlite3 /data/watchpile.db "VACUUM INTO '/data/backup-$(date +%F).db'"
-```
-
-`-u watchpile` importa: sem ele, `docker compose exec` roda como root (o
-entrypoint só troca de usuário pro processo principal do container), e o
-backup nasce com o mesmo problema de dono que o `PUID`/`PGID` existe pra
-evitar.
-
-**Quando existir imagem publicada**, o `compose.yaml` troca `build: .` por
-`image: fernandoenf/watchpile:x.y.z`, e não precisa mais clonar o
-repositório — só baixar o `compose.yaml`.
+**Com a imagem publicada**, o `compose.yaml` troca `build: .` por
+`image: ghcr.io/digit4w/watchpile:x.y.z`, e não precisa mais clonar o
+repositório — só baixar o `compose.yaml`. Use `:x.y.z` num `compose.yaml` que
+não pode mudar sozinho, e `:latest` se você quiser acompanhar.
 
 ### Desktop (Windows, macOS, Linux)
 
@@ -85,9 +99,35 @@ App Electron — mesma API, mesmo cliente web, empacotados como aplicativo
 nativo. Sem terminal, sem Docker: primeiro admin é criado num wizard na
 primeira abertura.
 
-**Hoje**, duas formas de rodar a partir do código-fonte — os dois repositórios
-precisam estar lado a lado (`watchpile-server/` e `watchpile-client/` na
-mesma pasta pai):
+Baixe da [página de Releases](https://github.com/Digit4w/watchpile-server/releases)
+e instale como qualquer outro app:
+
+| Sistema | Arquivo |
+| --- | --- |
+| Windows | `Watchpile.Setup.<versão>.exe` |
+| macOS (Apple Silicon) | `Watchpile-<versão>-arm64.dmg` |
+| Linux | `Watchpile-<versão>.AppImage` |
+
+**Nada é assinado**, e é a primeira coisa que você encontra: no Windows o
+SmartScreen avisa que o publicador é desconhecido (*Mais informações → Executar
+assim mesmo*); no macOS o app não abre com duplo-clique — **botão direito →
+Abrir**, uma vez.
+
+**Atualizar é rodar o instalador novo por cima.** Ele reconhece a instalação
+existente e a substitui, e **o seu banco sobrevive** porque não mora na pasta
+de instalação: ele fica em `%APPDATA%\Watchpile` no Windows e no
+`~/Library/Application Support/Watchpile` no macOS. Não há atualização
+automática — você precisa saber que saiu versão nova.
+
+> **Não instale uma versão mais ANTIGA por cima de uma mais nova.** O
+> instalador aceita sem reclamar, e o app quebra depois: as migrations já
+> aplicadas deixam o banco num formato que o binário antigo não conhece.
+
+<details>
+<summary><b>Rodar ou empacotar a partir do código-fonte</b></summary>
+
+Os dois repositórios precisam estar lado a lado (`watchpile-server/` e
+`watchpile-client/` na mesma pasta pai):
 
 ```bash
 git clone https://github.com/Digit4w/watchpile-server.git
@@ -96,19 +136,20 @@ cd watchpile-server && bun install
 ```
 
 - **Modo dev**, janela recarrega ao mudar código do server: `bun run electron:dev`
-- **Pacote de teste de verdade** (`.dmg`/`.exe`/`.AppImage`, o mesmo artefato
-  que o CI produz): `bun run electron:build` — builda o client, empacota,
-  deixa o instalador em `release/`. Sem assinatura de código: no macOS abra
-  com botão direito → Abrir na primeira vez, em vez de duplo-clique
+- **Pacote de verdade**, o mesmo artefato que o CI produz:
+  `bun run electron:build` — builda o client, empacota, e deixa o instalador
+  em `builds/<mac|windows|linux>/<preview|stable>/`
 
-`bun run electron:build` builda só para o sistema operacional em que você o
-roda — `better-sqlite3` é módulo nativo, não dá pra cross-compilar de forma
+Ele builda só para o sistema operacional em que você o roda —
+`better-sqlite3` é módulo nativo, não dá pra cross-compilar de forma
 confiável. `.github/workflows/build.yml` cobre os três SOs via matriz do
 GitHub Actions.
 
-**Quando existir instalador publicado**, isso vira "baixe o `.exe`/`.dmg`/
-`.AppImage` da página de Releases e instale como qualquer outro app" — sem
-precisar clonar nada.
+**Um pacote buildado por você não traz as chaves de provedor embarcadas** —
+elas entram a partir de secrets do CI, e sem elas a instalação pede a sua
+própria em Settings.
+
+</details>
 
 ### Node direto (sem Docker, sem Electron)
 
@@ -131,6 +172,36 @@ Você precisa colocar o build do cliente (`client/dist`, gerado com
 `bun run build` no repositório do client) no caminho apontado por
 `WATCHPILE_CLIENT_DIST_PATH` — nada disso é feito automaticamente fora do
 Docker e do Electron, que já embutem esse passo.
+
+## Backup
+
+**Tudo que é seu está em um arquivo**: o `.db` do SQLite. Copiar esse arquivo
+é o backup inteiro — biblioteca, progresso, pilhas, log, e também as chaves de
+provedor que o admin configurou.
+
+**Não copie o `.db` com o servidor rodando.** Ele fica em modo WAL, e uma cópia
+crua pode vir corrompida ou sem as transações mais recentes. O jeito certo é
+`VACUUM INTO`, que produz um arquivo consistente sem parar nada:
+
+```bash
+# Docker
+docker compose exec -u watchpile watchpile \
+  sqlite3 /data/watchpile.db "VACUUM INTO '/data/backup-$(date +%F).db'"
+
+# Desktop ou Node — aponte para o seu WATCHPILE_DB_PATH
+sqlite3 ~/Library/Application\ Support/Watchpile/watchpile.db \
+  "VACUUM INTO '$HOME/watchpile-backup-$(date +%F).db'"
+```
+
+No Windows o banco fica em `%APPDATA%\Watchpile\watchpile.db`.
+
+`-u watchpile` importa no Docker: sem ele, `docker compose exec` roda como root
+(o entrypoint só troca de usuário pro processo principal), e o backup nasce com
+o mesmo problema de dono que o `PUID`/`PGID` existe pra evitar.
+
+> **Faça isso antes de atualizar de versão**, enquanto o projeto estiver em
+> `0.x`. Não há teste de upgrade de migration entre versões, e as migrations
+> rodam sozinhas ao subir — se algo der errado, o backup é o que existe.
 
 ## Configuração
 
