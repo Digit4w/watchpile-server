@@ -91,6 +91,7 @@ function toPublic(
       slug: type.slug,
       icon: type.icon,
       countsProgress: type.countsProgress,
+      tracksTime: type.tracksTime,
       providers: providers,
       effectiveProvider: effectiveProviderOf(
         type.defaultProviderSlug,
@@ -187,7 +188,12 @@ export const create: AppRouteHandler<CreateRoute> = (c) => {
 
   const created = db
     .insert(mediaTypes)
-    .values({ slug, icon: body.icon, countsProgress: body.countsProgress })
+    .values({
+      slug,
+      icon: body.icon,
+      countsProgress: body.countsProgress,
+      tracksTime: body.tracksTime,
+    })
     .returning()
     .get()
 
@@ -242,6 +248,7 @@ export const update: AppRouteHandler<UpdateRoute> = (c) => {
   if (
     body.icon !== undefined ||
     body.countsProgress !== undefined ||
+    body.tracksTime !== undefined ||
     body.defaultProvider !== undefined
   ) {
     db.update(mediaTypes)
@@ -250,6 +257,7 @@ export const update: AppRouteHandler<UpdateRoute> = (c) => {
         ...(body.countsProgress !== undefined && {
           countsProgress: body.countsProgress,
         }),
+        ...(body.tracksTime !== undefined && { tracksTime: body.tracksTime }),
         // `null` limpa a escolha; ausente não mexe. A distinção é o que torna
         // desfazer possível — mesma forma do `PATCH` de credencial.
         ...(body.defaultProvider !== undefined && {

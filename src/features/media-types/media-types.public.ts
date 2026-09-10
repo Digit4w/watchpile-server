@@ -54,6 +54,16 @@ export const MediaTypeSchema = z.object({
    */
   countsProgress: z.boolean(),
   /**
+   * Este tipo registra TEMPO investido? — 10/09/2026.
+   *
+   * **Outra pergunta que `countsProgress`, e as duas convivem.** O contador
+   * responde *quanto do acervo você percorreu*; o tempo responde *quanto você
+   * investiu*, e não tem unidade, denominador nem fim. Jogo é o caso que
+   * separou as duas: ele não conta e ainda assim alguém quer registrar
+   * quarenta horas.
+   */
+  tracksTime: z.boolean(),
+  /**
    * Quantas obras usam o tipo, **de todos os usuários**. É o número que sustenta
    * a recusa de apagar, e é por isso que ele viaja na lista e não só no detalhe:
    * a tela mostra a contagem na linha pra que a recusa não surpreenda quem abre

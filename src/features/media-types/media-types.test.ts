@@ -132,6 +132,24 @@ describe('GET /api/media-types', () => {
     expect(counts('manga')).toBe(true)
   })
 
+  it('diz de cada tipo semeado se ele registra TEMPO', async () => {
+    // Outra pergunta que `countsProgress`, e as duas convivem: `game` **não
+    // conta** (`0044`) e registra tempo (`0049`). Afirma CADA UM pelo mesmo
+    // motivo do teste acima — contar quantos são é o que faz um teste
+    // envelhecer calado.
+    const cookie = await signUpAdmin()
+    const types = await list(cookie)
+    const tracks = (slug: string) =>
+      types.find((t) => t.slug === slug)?.tracksTime
+
+    expect(tracks('game')).toBe(true)
+    expect(tracks('movie')).toBe(false)
+    expect(tracks('tv')).toBe(false)
+    expect(tracks('anime')).toBe(false)
+    expect(tracks('manga')).toBe(false)
+    expect(tracks('book')).toBe(false)
+  })
+
   it('deixa sem unidade todo tipo que não conta', async () => {
     // A unidade acompanha o contador (`0048`): `Pages` ao lado de um tipo sem
     // contador é um par que a linha de `/settings/media-types` não sabe
@@ -245,6 +263,7 @@ describe('GET /api/media-types/templates', () => {
       expect(type, `o type ${template.slug} não foi seeded`).toBeDefined()
       expect(type?.icon).toBe(template.icon)
       expect(type?.countsProgress).toBe(template.countsProgress)
+      expect(type?.tracksTime).toBe(template.tracksTime)
       expect(type?.names).toEqual(template.names)
     }
   })

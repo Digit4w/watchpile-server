@@ -114,6 +114,12 @@
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
           },
+          "timeSpent": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -136,6 +142,7 @@
           "notes",
           "progress",
           "total",
+          "timeSpent",
           "createdAt",
           "updatedAt",
           "art"
@@ -2057,6 +2064,11 @@
                     "minimum": 0,
                     "maximum": 9007199254740991,
                     "exclusiveMinimum": true
+                  },
+                  "timeSpent": {
+                    "type": "integer",
+                    "nullable": true,
+                    "minimum": 0
                   }
                 }
               }
@@ -4821,6 +4833,9 @@
                       "countsProgress": {
                         "type": "boolean"
                       },
+                      "tracksTime": {
+                        "type": "boolean"
+                      },
                       "entryCount": {
                         "type": "integer"
                       },
@@ -4870,6 +4885,7 @@
                       "slug",
                       "icon",
                       "countsProgress",
+                      "tracksTime",
                       "entryCount",
                       "name",
                       "plural",
@@ -5012,6 +5028,10 @@
                     "type": "boolean",
                     "default": true
                   },
+                  "tracksTime": {
+                    "type": "boolean",
+                    "default": false
+                  },
                   "names": {
                     "type": "object",
                     "additionalProperties": {
@@ -5054,6 +5074,9 @@
                       "type": "string"
                     },
                     "countsProgress": {
+                      "type": "boolean"
+                    },
+                    "tracksTime": {
                       "type": "boolean"
                     },
                     "entryCount": {
@@ -5105,6 +5128,7 @@
                     "slug",
                     "icon",
                     "countsProgress",
+                    "tracksTime",
                     "entryCount",
                     "name",
                     "plural",
@@ -5270,6 +5294,9 @@
                       "countsProgress": {
                         "type": "boolean"
                       },
+                      "tracksTime": {
+                        "type": "boolean"
+                      },
                       "names": {
                         "type": "object",
                         "additionalProperties": {
@@ -5299,6 +5326,7 @@
                       "slug",
                       "icon",
                       "countsProgress",
+                      "tracksTime",
                       "names",
                       "installed"
                     ]
@@ -5465,6 +5493,10 @@
                     "type": "boolean",
                     "default": true
                   },
+                  "tracksTime": {
+                    "type": "boolean",
+                    "default": false
+                  },
                   "names": {
                     "type": "object",
                     "additionalProperties": {
@@ -5510,6 +5542,9 @@
                       "type": "string"
                     },
                     "countsProgress": {
+                      "type": "boolean"
+                    },
+                    "tracksTime": {
                       "type": "boolean"
                     },
                     "entryCount": {
@@ -5561,6 +5596,7 @@
                     "slug",
                     "icon",
                     "countsProgress",
+                    "tracksTime",
                     "entryCount",
                     "name",
                     "plural",
@@ -5782,6 +5818,9 @@
                     "countsProgress": {
                       "type": "boolean"
                     },
+                    "tracksTime": {
+                      "type": "boolean"
+                    },
                     "entryCount": {
                       "type": "integer"
                     },
@@ -5831,6 +5870,7 @@
                     "slug",
                     "icon",
                     "countsProgress",
+                    "tracksTime",
                     "entryCount",
                     "name",
                     "plural",
@@ -5948,6 +5988,9 @@
                     "countsProgress": {
                       "type": "boolean"
                     },
+                    "tracksTime": {
+                      "type": "boolean"
+                    },
                     "entryCount": {
                       "type": "integer"
                     },
@@ -5997,6 +6040,7 @@
                     "slug",
                     "icon",
                     "countsProgress",
+                    "tracksTime",
                     "entryCount",
                     "name",
                     "plural",

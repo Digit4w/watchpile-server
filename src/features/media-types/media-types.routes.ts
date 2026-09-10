@@ -52,6 +52,13 @@ const CreateBodySchema = z.object({
    * embarcados, só `movie` e `game` dizem que não (07/09/2026).
    */
   countsProgress: z.boolean().default(true),
+  /**
+   * Registra tempo investido? Padrão `false`, ao contrário de `countsProgress`:
+   * a maioria dos tipos não tem tempo a registrar, e um campo a mais em toda
+   * obra de toda instalação seria o oposto de *preferência existe onde o
+   * sistema não tem opinião*.
+   */
+  tracksTime: z.boolean().default(false),
   names: NameMapSchema,
 })
 
@@ -74,6 +81,7 @@ const TemplateSchema = z.object({
   slug: z.string(),
   icon: z.enum(ICON_NAMES),
   countsProgress: z.boolean(),
+  tracksTime: z.boolean(),
   names: NameMapSchema,
   installed: z.boolean(),
 })
