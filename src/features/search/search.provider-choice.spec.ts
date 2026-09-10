@@ -6,6 +6,7 @@ describe('quem responde a busca', () => {
     expect(
       chooseSearchProvider({
         requested: null,
+        preferred: null,
         effective: null,
         associated: [],
       }),
@@ -16,6 +17,7 @@ describe('quem responde a busca', () => {
     expect(
       chooseSearchProvider({
         requested: null,
+        preferred: null,
         effective: 'anilist',
         associated: ['anilist', 'tmdb'],
       }),
@@ -26,6 +28,7 @@ describe('quem responde a busca', () => {
     expect(
       chooseSearchProvider({
         requested: 'tmdb',
+        preferred: null,
         effective: 'anilist',
         associated: ['anilist', 'tmdb'],
       }),
@@ -38,6 +41,7 @@ describe('quem responde a busca', () => {
     expect(
       chooseSearchProvider({
         requested: 'igdb',
+        preferred: null,
         effective: null,
         associated: ['tmdb'],
       }),
@@ -51,6 +55,7 @@ describe('quem responde a busca', () => {
     expect(
       chooseSearchProvider({
         requested: null,
+        preferred: null,
         effective: null,
         associated: ['tmdb', 'anilist'],
       }),
@@ -60,11 +65,13 @@ describe('quem responde a busca', () => {
   it('a ordem do banco não muda a resposta', () => {
     const a = chooseSearchProvider({
       requested: null,
+      preferred: null,
       effective: null,
       associated: ['tmdb', 'anilist', 'mangadex'],
     })
     const b = chooseSearchProvider({
       requested: null,
+      preferred: null,
       effective: null,
       associated: ['mangadex', 'tmdb', 'anilist'],
     })
@@ -77,9 +84,64 @@ describe('quem responde a busca', () => {
     expect(
       chooseSearchProvider({
         requested: null,
+        preferred: null,
         effective: 'igdb',
         associated: ['tmdb'],
       }),
     ).toEqual({ ok: true, provider: 'tmdb' })
+  })
+
+  it('a preferência de quem busca vence o efetivo do admin', () => {
+    // A régua de 30/08 põe as duas de lados diferentes: o efetivo é "quem
+    // responde a busca NESTE SERVIDOR", a preferência é "com que fonte EU
+    // busco". Quem está na frente da tela escolheu por último.
+    expect(
+      chooseSearchProvider({
+        requested: null,
+        preferred: 'kitsu',
+        effective: 'anilist',
+        associated: ['anilist', 'kitsu'],
+      }),
+    ).toEqual({ ok: true, provider: 'kitsu' })
+  })
+
+  it('o pedido explícito vence a preferência — trocar de fonte é por consulta', () => {
+    // Sem isto, o seletor deixaria de funcionar dentro da própria busca em que
+    // ele foi usado: a escrita da preferência e a consulta acontecem no mesmo
+    // gesto, e a segunda não pode obedecer a um valor mais antigo.
+    expect(
+      chooseSearchProvider({
+        requested: 'anilist',
+        preferred: 'kitsu',
+        effective: 'kitsu',
+        associated: ['anilist', 'kitsu'],
+      }),
+    ).toEqual({ ok: true, provider: 'anilist' })
+  })
+
+  it('preferência por um provedor que não serve mais o tipo cai no efetivo', () => {
+    // Ela chega validada de `preferredSourceFor`, mas a função é pura e não
+    // pode depender disso: uma preferência órfã aqui viraria a MESMA recusa
+    // que um pedido inválido, culpando a pessoa por uma escolha antiga que ela
+    // não tem como ver nem desfazer.
+    expect(
+      chooseSearchProvider({
+        requested: null,
+        preferred: 'igdb',
+        effective: 'tmdb',
+        associated: ['tmdb'],
+      }),
+    ).toEqual({ ok: true, provider: 'tmdb' })
+  })
+
+  it('sem preferência e sem efetivo, o desempate por slug continua valendo', () => {
+    expect(
+      chooseSearchProvider({
+        requested: null,
+        preferred: null,
+        effective: null,
+        associated: ['tmdb', 'anilist'],
+      }),
+    ).toEqual({ ok: true, provider: 'anilist' })
   })
 })
