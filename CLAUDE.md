@@ -1317,6 +1317,46 @@ nomes é o mesmo dos vínculos: **`default_provider_slug` é a escolha crua**
 - **`piles` ganha `description` nulável** (brief, 3.17). E **não** ganha marca de
   pile de sistema: a direção foi revertida em 29/08/2026 — toda pilha é do
   usuário e apagável, sem exceção no handler de delete
+- **`field_map` e `endpoints.query` são DUAS contas da mesma coisa, e a segunda é
+  MUDA — 09/09/2026** (brief, 3.10). O primeiro diz o que LER da resposta, o
+  segundo diz o que PEDIR. Quando o primeiro cresce sem o segundo, **o defeito não
+  tem como aparecer**: caminho ausente devolve nulo, e nulo é estado legítimo em
+  quase todo campo do mapa. No MyAnimeList isso escondeu **três** coisas por
+  meses — a busca não pedia total em tipo nenhum (o que tornava **inerte** o
+  conserto do mesmo dia que fazia o total chegar até a tela), o detalhe de mangá
+  não pedia `num_chapters`, e não pedia `related_manga`, então **mangá nenhum
+  jamais mostrou um vínculo**: a seção existia e nunca teve o que renderizar.
+  **`query` é do PROVEDOR** e o conteúdo dele era anime-only, enquanto um
+  comentário na semente afirmava que *"os dois pares trazem o seu `fields`"* —
+  **esse mecanismo não existe**: o par sobrescreve `path` e `body`, nunca `query`.
+  A saída é a **união no provedor** (`0047`, decisão do dono), medida: o MAL
+  ignora em silêncio o campo que não se aplica ao tipo. Coluna de query no par
+  seria a **quinta** propriedade a fazer o caminho *o que pertence ao par se
+  declara*, e é o certo no dia em que um segundo provedor precisar — hoje só o MAL
+  usa `fields` com mais de um tipo. **Comentário que descreve um mecanismo
+  INEXISTENTE é pior que comentário desatualizado:** o desatualizado contradiz o
+  código e alguém tropeça; este afirmava que o problema já estava resolvido, então
+  ninguém foi conferir
+- **O import do MAL passou a trazer o TOTAL, e o argumento que o descartava tinha
+  ENVELHECIDO — 09/09/2026** (brief, 3.12). O leitor escrevia `total: null` com um
+  comentário dizendo que pedi-lo custaria `fields` em toda página *"para um dado
+  que a tela de detalhe busca quando precisa"* — mas **a tela de detalhe não é
+  mais o único lugar que mostra o total**, e o `12 / ?` da 3.11 é o estado de *não
+  se sabe*, **não de *não pedimos***. O custo estava superestimado: `fields` é
+  query string, não uma requisição a mais. `fields=list_status,num_episodes` em
+  anime e `,num_chapters` em mangá, com **zero lido como DESCONHECIDO** — medido:
+  *One Piece* em exibição devolve `0` e *Monster*, terminado, devolve 162. O
+  `paging.next` devolve o `fields` inteiro de volta, então a segunda página não
+  perde o campo. **A metade retroativa não precisou de código:** `overwriteState`
+  já escreve `total`, então re-importar com `Overwrite` conserta a biblioteca que
+  nasceu sem denominador
+- **Um relato pode ser a ponta de um defeito estrutural — 09/09/2026.** O relatado
+  era `Year unknown` em toda carta de recomendação do MAL, e escrever `year` no
+  mapa o teria fechado deixando os três acima de pé. **O que separa os dois é
+  MEDIR em vez de consertar o sintoma**, que é a régua daquele provedor desde
+  07/09: a referência oficial dele não traz uma amostra de resposta sequer, e a
+  sub-seleção (`recommendations{node{start_date}}`) só se sabe que funciona
+  batendo nela
 - **v1 tem só TMDB** (filmes e séries). Os outros entram um por vez (3.12)
 
 ## O banco em WAL, e import em lotes
