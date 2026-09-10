@@ -335,6 +335,16 @@
         },
         "required": ["kind"]
       },
+      "ServerMeta": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": ["version"]
+      },
       "NetworkSettings": {
         "type": "object",
         "properties": {
@@ -6133,6 +6143,39 @@
                     }
                   },
                   "required": ["message", "entryCount"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/meta": {
+      "get": {
+        "tags": ["Meta"],
+        "responses": {
+          "200": {
+            "description": "Facts about the server answering this request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerMeta"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
                 }
               }
             }
