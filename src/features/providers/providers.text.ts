@@ -145,3 +145,112 @@ export function subtypeLabel(
     })
     .join(' ')
 }
+
+/**
+ * A frase que o PROVEDOR escreveu ao recusar — 10/09/2026, decisão do dono.
+ *
+ * ── Por que ela vai pra tela ───────────────────────────────────────────────
+ * Até aqui o motivo do provedor ia só pro log, e a tela mostrava copy nossa com
+ * o status ao lado. Isso basta pra saber QUE falhou e não pra saber POR QUÊ — e
+ * quem lê a recusa de um `4xx` é um admin que precisa consertar alguma coisa. O
+ * 401 do IGDB é o exemplo que fecha o argumento: ele responde *"Ensure you are
+ * sending Authorization and Client-ID as headers"*, que é literalmente a
+ * instrução do conserto.
+ *
+ * **O custo está assumido:** ela vem em inglês e **não passa pelo catálogo**,
+ * como a atribuição também não passa. A diferença é que a atribuição é licença;
+ * esta é diagnóstico. Por isso ela é atribuída na tela — *a frase que EXPLICA um
+ * resultado é da fonte que o produziu* (design system, seção 8) —, e nunca se
+ * mistura com a nossa copy.
+ *
+ * ── O que ela NÃO tenta ser ────────────────────────────────────────────────
+ * Não é o corpo cru. Provedor recusando manda de tudo — HTML de proxy, página
+ * de erro, JSON aninhado —, e despejar isso numa caixa de 256px seria pior que
+ * o silêncio de antes. Ela procura a frase nos campos onde as APIs a colocam,
+ * aceita texto curto, e **desiste em silêncio** quando não acha: nulo aqui
+ * devolve exatamente a tela de ontem.
+ */
+const MESSAGE_KEYS = [
+  'message',
+  'error',
+  'error_description',
+  'status_message',
+  'detail',
+  'title',
+] as const
+
+/** O teto é de LEITURA, não de segurança: duas linhas numa caixa estreita. */
+const MAX = 180
+
+export function providerMessage(body: unknown): string | null {
+  const found = pick(body)
+  if (found === null) {
+    return null
+  }
+
+  /**
+   * Uma linha só, e sem marcação: quebra e tag vêm de página de erro, e o que
+   * sobra depois de tirá-las é o que valia a pena mostrar. Se não sobrar nada
+   * legível, é nulo — a mesma desistência silenciosa de sempre.
+   */
+  const clean = found
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (clean === '') {
+    return null
+  }
+  return clean.length > MAX ? `${clean.slice(0, MAX - 1).trimEnd()}…` : clean
+}
+
+function pick(body: unknown): string | null {
+  if (typeof body === 'string') {
+    // Corpo que já é texto: só vale se for curto o bastante pra ser uma frase.
+    // Uma página de HTML inteira entra aqui, e é justamente o que não se mostra.
+    return body.length <= 400 ? body : null
+  }
+  if (typeof body !== 'object' || body === null) {
+    return null
+  }
+
+  const record = body as Record<string, unknown>
+  for (const key of MESSAGE_KEYS) {
+    const value = record[key]
+    if (typeof value === 'string' && value.trim() !== '') {
+      return value
+    }
+    /**
+     * **O AniList aninha, e ele é o caso que motivou olhar aqui:** a recusa
+     * dele vem em `errors: [{ message }]`. Um nível de profundidade cobre o que
+     * os sete provedores fazem; mais que isso seria varrer JSON alheio à
+     * procura de qualquer string, que é como se mostra uma chave de API sem
+     * querer.
+     */
+    if (Array.isArray(value)) {
+      const first = value[0]
+      if (typeof first === 'string' && first.trim() !== '') {
+        return first
+      }
+      if (typeof first === 'object' && first !== null) {
+        const nested = (first as Record<string, unknown>).message
+        if (typeof nested === 'string' && nested.trim() !== '') {
+          return nested
+        }
+      }
+    }
+  }
+
+  const errors = record.errors
+  if (Array.isArray(errors)) {
+    const first = errors[0]
+    if (typeof first === 'object' && first !== null) {
+      const message = (first as Record<string, unknown>).message
+      if (typeof message === 'string' && message.trim() !== '') {
+        return message
+      }
+    }
+  }
+
+  return null
+}

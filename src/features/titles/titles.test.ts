@@ -413,6 +413,59 @@ describe('unidades — episódios, capítulos, o que o provedor tiver', () => {
     expect(call).toHaveBeenCalledTimes(1)
   })
 
+  it('o COLETIVO dos grupos também é do par, e não da tela', async () => {
+    // O `name` de cada grupo já vinha do provedor; o coletivo era `'Seasons'`
+    // escrito em código do cliente, pra todo tipo de mídia — o produto
+    // decidindo como o agrupamento se chama, que é o que este arquivo diz que
+    // ele nunca faz. Só `(tv, tmdb)` agrupa hoje, então só ele declara.
+    const cookie = await signUpAdmin()
+    giveKey()
+    respond(SERIES)
+
+    const series = (await (
+      await app.request('/api/search/tmdb/1396?type=tv', {
+        headers: { Cookie: cookie },
+      })
+    ).json()) as { unitGroupLabel: string | null }
+
+    expect(series.unitGroupLabel).toBe('Seasons')
+  })
+
+  it('sem grupos não há coletivo a nomear', async () => {
+    // Nulo é legítimo, e a tela então não inventa um: os nomes que o provedor
+    // deu já se explicam.
+    const cookie = await signUpAdmin()
+    giveKey()
+    respond(DETAIL)
+
+    const movie = (await (
+      await app.request('/api/search/tmdb/550?type=movie', {
+        headers: { Cookie: cookie },
+      })
+    ).json()) as { unitGroupLabel: string | null }
+
+    expect(movie.unitGroupLabel).toBeNull()
+  })
+
+  it('o par declara o coletivo e a RESPOSTA não traz grupo: nulo', async () => {
+    // O caso que separa "o par não agrupa" de "o par agrupa e esta obra não
+    // tem grupo" — uma série sem temporadas na resposta. O primeiro já dá nulo
+    // sozinho; sem a guarda, o segundo devolveria `Seasons` para um conjunto
+    // vazio, e a tela teria um cabeçalho sem nada sob ele.
+    const cookie = await signUpAdmin()
+    giveKey()
+    respond(JSON.stringify({ ...JSON.parse(SERIES), seasons: [] }))
+
+    const series = (await (
+      await app.request('/api/search/tmdb/1396?type=tv', {
+        headers: { Cookie: cookie },
+      })
+    ).json()) as { unitGroups: unknown[]; unitGroupLabel: string | null }
+
+    expect(series.unitGroups).toEqual([])
+    expect(series.unitGroupLabel).toBeNull()
+  })
+
   it('lista as unidades de um grupo, pelo mapa da junção', async () => {
     const cookie = await signUpAdmin()
     giveKey()

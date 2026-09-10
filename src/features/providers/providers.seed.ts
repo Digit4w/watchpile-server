@@ -183,6 +183,22 @@ const IGDB_DETAIL_FIELDS = IGDB_FIELDS.replace(
 )
 
 /**
+ * O `fields` do MyAnimeList, na forma de UNIÃO dos dois tipos — o porquê está
+ * inteiro no bloco `endpoints` da definição dele.
+ *
+ * O da BUSCA não pede vínculo nem recomendação, pela mesma razão do IGDB acima:
+ * vinte resultados não mostram vínculo, e `relations` não entra em mapa de
+ * busca de ninguém.
+ */
+const MAL_SEARCH_FIELDS =
+  'id,title,main_picture,start_date,synopsis,mean,media_type' +
+  ',num_episodes,num_chapters'
+
+const MAL_DETAIL_FIELDS =
+  `${MAL_SEARCH_FIELDS},related_anime{node{start_date}}` +
+  ',related_manga{node{start_date}},recommendations{node{start_date}}'
+
+/**
  * Os provedores que o produto embarca, como DEFINIÇÃO — não como caso especial
  * em código (brief, 3.10).
  *
@@ -457,6 +473,13 @@ export const PROVIDER_SEEDS: readonly ProviderSeed[] = [
             name: 'name',
             count: 'episode_count',
             art: 'poster_path',
+            /**
+             * O coletivo, e ele é do PAR pelo mesmo motivo que `name` é do
+             * provedor: **o produto não decide como o agrupamento se chama**.
+             * Este é o único par que agrupa hoje, e por isso o único que o
+             * declara.
+             */
+            label: 'Seasons',
           },
           // Mesma forma do par de filme, lendo `name` e `first_air_date` —
           // que é a linha que justifica o mapa ser do par, de novo.
@@ -1300,15 +1323,46 @@ export const PROVIDER_SEEDS: readonly ProviderSeed[] = [
     endpoints: {
       /**
        * `fields` é obrigatório para vir qualquer coisa além de id, título e
-       * imagem — medido. Este é o fallback; os dois pares trazem o seu, porque
-       * o campo de total difere (`num_episodes` × `num_chapters`).
+       * imagem — medido.
+       *
+       * ── Ele é do PROVEDOR e o conteúdo dele é do TIPO ─────────────────────
+       * Um comentário aqui dizia que "os dois pares trazem o seu, porque o
+       * campo de total difere". **Isso nunca existiu**: `query` mora em
+       * `endpoints`, e o par só sobrescreve `path` e `body`. O comentário
+       * descrevia um mecanismo que ninguém construiu, e por isso ninguém foi
+       * conferir o que a lista anime-only estava custando.
+       *
+       * Custava quatro coisas, todas silenciosas porque o `fieldMap` lê um
+       * caminho que a resposta simplesmente não traz (09/09/2026):
+       *
+       *   1. **A busca não pedia total nenhum**, nos dois tipos — o `total` do
+       *      mapa aponta pra `node.num_episodes` / `node.num_chapters`
+       *   2. **O detalhe de mangá não pedia `num_chapters`**
+       *   3. **O detalhe de mangá não pedia `related_manga`**, então mangá
+       *      nenhum jamais mostrou vínculo
+       *   4. **Nem vínculo nem recomendação pediam a data**, e a carta dizia
+       *      `Year unknown` em todas
+       *
+       * ── A saída é a UNIÃO, e ela foi medida ───────────────────────────────
+       * O MAL **ignora em silêncio** o campo que não se aplica ao tipo: a busca
+       * de anime devolve `num_episodes` e omite `num_chapters`, a de mangá faz
+       * o inverso, e nenhuma das duas erra. Coluna de query por par seria a
+       * quinta propriedade a fazer o caminho *"o que pertence ao par se
+       * declara"* — e é o certo no dia em que um segundo provedor precisar
+       * dela. Hoje só o MAL usa `fields` com mais de um tipo (o Open Library
+       * usa, e tem um tipo só), então a união paga alguns bytes por pedido em
+       * vez de uma coluna que serviria a um caso.
+       *
+       * A sub-seleção com chaves (`recommendations{node{start_date}}`) é
+       * dialeto do MAL, e também foi medida: sem ela o `node` volta com id,
+       * título e imagem, e nada mais.
        */
       search: {
         path: '/anime',
         queryParam: 'q',
         query: {
           limit: '20',
-          fields: 'id,title,main_picture,start_date,synopsis,mean,media_type',
+          fields: MAL_SEARCH_FIELDS,
         },
         // O TMDB põe em `results`; este põe em `data`, e cada item vem
         // embrulhado num `node`.
@@ -1317,8 +1371,7 @@ export const PROVIDER_SEEDS: readonly ProviderSeed[] = [
       detail: {
         path: '/anime/{id}',
         query: {
-          fields:
-            'id,title,main_picture,start_date,synopsis,mean,media_type,num_episodes,related_anime,recommendations',
+          fields: MAL_DETAIL_FIELDS,
         },
       },
       /**
@@ -1417,6 +1470,14 @@ export const PROVIDER_SEEDS: readonly ProviderSeed[] = [
              */
             kind: 'relation_type_formatted',
             /**
+             * **A data vem da SUB-SELEÇÃO, e ela precisa ser pedida** — sem
+             * `{node{start_date}}` no `fields`, o `node` volta com id, título e
+             * imagem e mais nada, e a carta dizia `Year unknown` em todas.
+             * `start_date` começa pelo ano (`2009-10-12`), então nenhum
+             * `yearFormat` é preciso.
+             */
+            year: 'node.start_date',
+            /**
              * **Sem `typeToken`, e a ausência é a resposta certa.**
              * `related_anime` num detalhe de anime só devolve anime — o
              * endpoint já é do tipo. Ausente quer dizer "o mesmo tipo da obra",
@@ -1428,6 +1489,7 @@ export const PROVIDER_SEEDS: readonly ProviderSeed[] = [
             id: 'node.id',
             title: 'node.title',
             art: 'node.main_picture.large',
+            year: 'node.start_date',
           },
         },
       },
@@ -1470,6 +1532,14 @@ export const PROVIDER_SEEDS: readonly ProviderSeed[] = [
              */
             kind: 'relation_type_formatted',
             /**
+             * **A data vem da SUB-SELEÇÃO, e ela precisa ser pedida** — sem
+             * `{node{start_date}}` no `fields`, o `node` volta com id, título e
+             * imagem e mais nada, e a carta dizia `Year unknown` em todas.
+             * `start_date` começa pelo ano (`2009-10-12`), então nenhum
+             * `yearFormat` é preciso.
+             */
+            year: 'node.start_date',
+            /**
              * **Sem `typeToken`, e a ausência é a resposta certa.**
              * `related_anime` num detalhe de anime só devolve anime — o
              * endpoint já é do tipo. Ausente quer dizer "o mesmo tipo da obra",
@@ -1481,6 +1551,7 @@ export const PROVIDER_SEEDS: readonly ProviderSeed[] = [
             id: 'node.id',
             title: 'node.title',
             art: 'node.main_picture.large',
+            year: 'node.start_date',
           },
         },
       },

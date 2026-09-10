@@ -1,17 +1,24 @@
 import { and, count, eq, inArray } from 'drizzle-orm'
 import { db } from '../../db/client.js'
 import { entries } from '../../db/schema/entries.js'
+import { externalIds } from '../../db/schema/external-ids.js'
 import { mediaTypeProviders } from '../../db/schema/media-type-providers.js'
 import { mediaTypeNames, mediaTypes } from '../../db/schema/media-types.js'
 import type { AppRouteHandler } from '../../lib/types.js'
 import type { MediaTypePublic } from './media-types.public.js'
-import { effectiveProviderOf, instanceLanguage } from './media-types.query.js'
+import {
+  effectiveProviderOf,
+  instanceLanguage,
+  mediaTypeExists,
+} from './media-types.query.js'
 import { type NameMap, resolveName } from './media-types.resolve.js'
 import type {
   CreateRoute,
+  LinkRoute,
   ListRoute,
   RemoveRoute,
   TemplatesRoute,
+  UnlinkRoute,
   UpdateRoute,
 } from './media-types.routes.js'
 import { uniqueSlug } from './media-types.slug.js'
@@ -84,6 +91,7 @@ function toPublic(
       slug: type.slug,
       icon: type.icon,
       countsProgress: type.countsProgress,
+      tracksTime: type.tracksTime,
       providers: providers,
       effectiveProvider: effectiveProviderOf(
         type.defaultProviderSlug,
@@ -180,7 +188,12 @@ export const create: AppRouteHandler<CreateRoute> = (c) => {
 
   const created = db
     .insert(mediaTypes)
-    .values({ slug, icon: body.icon, countsProgress: body.countsProgress })
+    .values({
+      slug,
+      icon: body.icon,
+      countsProgress: body.countsProgress,
+      tracksTime: body.tracksTime,
+    })
     .returning()
     .get()
 
@@ -235,6 +248,7 @@ export const update: AppRouteHandler<UpdateRoute> = (c) => {
   if (
     body.icon !== undefined ||
     body.countsProgress !== undefined ||
+    body.tracksTime !== undefined ||
     body.defaultProvider !== undefined
   ) {
     db.update(mediaTypes)
@@ -243,6 +257,7 @@ export const update: AppRouteHandler<UpdateRoute> = (c) => {
         ...(body.countsProgress !== undefined && {
           countsProgress: body.countsProgress,
         }),
+        ...(body.tracksTime !== undefined && { tracksTime: body.tracksTime }),
         // `null` limpa a escolha; ausente não mexe. A distinção é o que torna
         // desfazer possível — mesma forma do `PATCH` de credencial.
         ...(body.defaultProvider !== undefined && {
@@ -305,4 +320,176 @@ export const remove: AppRouteHandler<RemoveRoute> = (c) => {
   db.delete(mediaTypes).where(eq(mediaTypes.id, type.id)).run()
 
   return c.body(null, 204)
+}
+
+/**
+ * As colunas que compõem a RECEITA de um par — 10/09/2026.
+ *
+ * Ficam nomeadas numa lista, e não num `...resto` de spread, porque a chave
+ * primária (`mediaTypeSlug`, `providerSlug`) não é receita: copiá-la escreveria
+ * o par de origem por cima de si mesmo. **Coluna nova na junção precisa entrar
+ * aqui**, e é o tipo de esquecimento que não dá erro — só produz um par pela
+ * metade.
+ */
+const RECIPE_COLUMNS = [
+  'searchPath',
+  'searchBody',
+  'fieldMap',
+  'detailPath',
+  'detailBody',
+  'detailFieldMap',
+  'providerTypeToken',
+  'relationsPath',
+  'unitsPath',
+  'unitMap',
+] as const
+
+/**
+ * Que este provedor sirva este tipo, copiando a receita de um tipo que ele já
+ * serve (brief, 3.10).
+ *
+ * **`PUT` e idempotente de propósito:** repetir com outro `copyFrom` troca a
+ * receita, que é o gesto de "copiei do tipo errado". Recusar a segunda vez
+ * obrigaria a desvincular pra corrigir, e desvincular é o caminho guardado.
+ */
+export const link: AppRouteHandler<LinkRoute> = (c) => {
+  const { slug, provider } = c.req.valid('param')
+  const { copyFrom } = c.req.valid('json')
+
+  if (!mediaTypeExists(slug)) {
+    return c.json({ message: 'Media type not found' }, 404)
+  }
+
+  /**
+   * A receita de origem é procurada pelo PAR, e é ela que prova que o provedor
+   * existe: um par só existe com as duas pontas, então achar a linha responde
+   * as duas perguntas de uma vez.
+   */
+  const source = db
+    .select()
+    .from(mediaTypeProviders)
+    .where(
+      and(
+        eq(mediaTypeProviders.mediaTypeSlug, copyFrom),
+        eq(mediaTypeProviders.providerSlug, provider),
+      ),
+    )
+    .get()
+
+  if (!source) {
+    return c.json(
+      {
+        message: `${provider} does not serve ${copyFrom}, so there is no recipe to copy.`,
+      },
+      400,
+    )
+  }
+
+  if (copyFrom === slug) {
+    return c.json({ message: 'A type cannot copy its own recipe.' }, 400)
+  }
+
+  const recipe = Object.fromEntries(
+    RECIPE_COLUMNS.map((column) => [column, source[column]]),
+  )
+
+  db.insert(mediaTypeProviders)
+    .values({ mediaTypeSlug: slug, providerSlug: provider, ...recipe })
+    .onConflictDoUpdate({
+      target: [
+        mediaTypeProviders.mediaTypeSlug,
+        mediaTypeProviders.providerSlug,
+      ],
+      set: recipe,
+    })
+    .run()
+
+  // `undefined` como locale, igual a `create` e `update`: a queda cai no
+  // idioma da instância, e quem lê a lista pede o dele na consulta seguinte.
+  return c.json(toPublic([slug], undefined)[0] as MediaTypePublic, 200)
+}
+
+/**
+ * Que ele pare de servir.
+ *
+ * **A recusa é sobre uma consequência invisível:** `bindingFor` é o que serve
+ * arte, detalhe e resolução de obra. Sem a linha, toda obra deste tipo
+ * vinculada a este provedor fica sem receita — a arte para de carregar e o
+ * detalhe para de abrir, **sem nada na tela dizendo por quê**. Por isso a
+ * contagem vem junto, como na de apagar tipo: "não dá" manda o admin adivinhar
+ * o tamanho do problema.
+ *
+ * A contagem é de TODOS os usuários, pelo mesmo motivo de lá.
+ */
+export const unlink: AppRouteHandler<UnlinkRoute> = (c) => {
+  const { slug, provider } = c.req.valid('param')
+
+  const pair = db
+    .select()
+    .from(mediaTypeProviders)
+    .where(
+      and(
+        eq(mediaTypeProviders.mediaTypeSlug, slug),
+        eq(mediaTypeProviders.providerSlug, provider),
+      ),
+    )
+    .get()
+
+  if (!pair) {
+    return c.json({ message: 'That provider does not serve this type' }, 404)
+  }
+
+  const inUse =
+    db
+      .select({ total: count() })
+      .from(externalIds)
+      .where(
+        and(
+          eq(externalIds.mediaType, slug),
+          eq(externalIds.provider, provider),
+        ),
+      )
+      .get()?.total ?? 0
+
+  if (inUse > 0) {
+    return c.json(
+      {
+        message:
+          'Titles of this type already point at this provider. Unlink them first.',
+        entryCount: inUse,
+      },
+      409,
+    )
+  }
+
+  db.delete(mediaTypeProviders)
+    .where(
+      and(
+        eq(mediaTypeProviders.mediaTypeSlug, slug),
+        eq(mediaTypeProviders.providerSlug, provider),
+      ),
+    )
+    .run()
+
+  /**
+   * O padrão de busca não pode apontar pra um provedor que não serve mais o
+   * tipo — ele deixaria `effectiveProvider` prometendo uma fonte que a busca
+   * recusa. Limpar devolve o tipo ao estado nulo, que ele já sabe ocupar.
+   *
+   * Não é `onDelete: 'set null'` de FK porque a FK dele é pra `providers`, e o
+   * provedor continua existindo: quem deixou de existir é o PAR.
+   */
+  db.update(mediaTypes)
+    .set({ defaultProviderSlug: null })
+    .where(
+      and(
+        eq(mediaTypes.slug, slug),
+        eq(mediaTypes.defaultProviderSlug, provider),
+      ),
+    )
+    .run()
+
+  // `undefined` como locale, igual a `create` e `update`: a queda cai no
+  // idioma da instância, e quem lê a lista pede o dele na consulta seguinte.
+  return c.json(toPublic([slug], undefined)[0] as MediaTypePublic, 200)
 }

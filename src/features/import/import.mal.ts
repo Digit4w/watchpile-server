@@ -95,9 +95,22 @@ async function readList(
   fetchImpl: typeof fetch,
 ): Promise<SourceReading> {
   const items: ImportItem[] = []
+  /**
+   * **O total da obra vem na LISTA, e custa um parâmetro** — medido contra a
+   * API real em 09/09/2026: `num_episodes` (anime) e `num_chapters` (mangá)
+   * chegam dentro de `node`, e o `paging.next` que eles devolvem já traz o
+   * `fields` inteiro de volta, então a segunda página não perde o campo.
+   *
+   * Ele NÃO vinha antes, com o argumento de que a tela de detalhe buscaria o
+   * total quando precisasse. O argumento envelheceu: a carta e as duas listas
+   * mostram o denominador, e `12 / ?` é o estado desenhado para *não se sabe*
+   * (brief, 3.11) — não para *não pedimos*. Numa biblioteca importada isso
+   * deixava 138 obras com `/ ?` tendo todas fim conhecido.
+   */
+  const totalField = kind === 'anime' ? 'num_episodes' : 'num_chapters'
   let url =
     `https://api.myanimelist.net/v2/users/${encodeURIComponent(username)}` +
-    `/${kind}list?limit=${PAGE_SIZE}&fields=list_status`
+    `/${kind}list?limit=${PAGE_SIZE}&fields=list_status,${totalField}`
 
   for (let page = 0; page < MAX_PAGES; page += 1) {
     const body = await fetchPage(url, clientId, kind, fetchImpl)
@@ -125,7 +138,12 @@ async function readList(
 }
 
 type MalRow = {
-  node?: { id?: number; title?: string }
+  node?: {
+    id?: number
+    title?: string
+    num_episodes?: number
+    num_chapters?: number
+  }
   list_status?: Record<string, unknown>
 }
 
@@ -235,12 +253,7 @@ function toItem(row: MalRow, kind: 'anime' | 'manga'): ImportItem | null {
     title,
     status,
     progress: typeof progress === 'number' ? progress : 0,
-    /**
-     * A lista **não** traz o total da obra — só o progresso de quem a
-     * acompanha. Pedi-lo custaria `fields=node{num_episodes}` em toda página
-     * para um dado que a tela de detalhe busca quando precisa.
-     */
-    total: null,
+    total: totalOf(row, kind),
     links: [{ provider: PROVIDER, externalId: String(id) }],
     /**
      * **Sempre parcial**, e por construção: o MAL entrega um id só. O
@@ -251,6 +264,20 @@ function toItem(row: MalRow, kind: 'anime' | 'manga'): ImportItem | null {
     partialIdentity: true,
     occurredAt: dateOf(raw.updated_at),
   }
+}
+
+/**
+ * **Zero é DESCONHECIDO, não zero** — obra com zero episódios não existe, então
+ * zero nunca é um total legítimo. Medido: One Piece em exibição devolve
+ * `num_episodes: 0` e Berserk em publicação devolve `num_chapters: 0`, enquanto
+ * Monster, terminado, devolve 162.
+ *
+ * É a mesma regra que `providers.detail.ts` já aplica com `|| null`, e é ela
+ * que faz o mangá em publicação chegar como `12 / ?` em vez de `12 / 0`.
+ */
+function totalOf(row: MalRow, kind: 'anime' | 'manga'): number | null {
+  const raw = kind === 'anime' ? row.node?.num_episodes : row.node?.num_chapters
+  return typeof raw === 'number' && raw > 0 ? raw : null
 }
 
 /**

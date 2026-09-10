@@ -51,8 +51,8 @@ export const mediaTypes = sqliteTable('media_types', {
    *
    * | `countsProgress` | Quem é | A folha de criar obra |
    * | --- | --- | --- |
-   * | `false` | filme, jogo | sem campo de total; a obra nasce `1` |
-   * | `true` | série, anime, mangá, livro | campo de total **opcional** |
+   * | `false` | filme, jogo, livro | sem campo de total; a obra nasce `1` |
+   * | `true` | série, anime, mangá | campo de total **opcional** |
    *
    * **Ele nasceu ao lado de um `asks_total`, que foi REMOVIDO na `0045`.**
    * Aquele campo dizia se o formulário pergunta o total, e depois desta
@@ -76,6 +76,34 @@ export const mediaTypes = sqliteTable('media_types', {
   countsProgress: integer('counts_progress', { mode: 'boolean' })
     .notNull()
     .default(true),
+  /**
+   * Este tipo registra TEMPO investido? — 10/09/2026, decisão do dono.
+   *
+   * **É outra pergunta que `counts_progress`, e as duas convivem.** O contador
+   * responde *quanto do acervo você percorreu* — tem unidade, tem denominador e
+   * tem fim. O tempo responde *quanto você investiu* — não tem nenhum dos três.
+   * Jogo é o caso que separou as duas: ele **não conta** (`0044`) e ainda assim
+   * alguém quer registrar quarenta horas.
+   *
+   * ── Por que a decisão mora no TIPO, e não na obra ─────────────────────────
+   * A alternativa era uma coluna em `entries` que só um tipo usaria, e ela
+   * cobraria no terceiro tipo que quisesse o mesmo. Aqui a pergunta é
+   * vocabulário — audiolivro, podcast e curso têm exatamente o mesmo formato —,
+   * e o vocabulário é aberto desde 30/08: o admin liga onde faz sentido, sem
+   * código novo. É a mesma régua que já pôs `progress_unit` e `counts_progress`
+   * neste lado.
+   *
+   * **Padrão `false`.** A maioria dos tipos não tem tempo a registrar, e um
+   * campo a mais em toda obra de toda instalação seria o oposto de "preferência
+   * existe onde o sistema não tem opinião". Só `game` nasce ligado.
+   *
+   * **Onde `counts_progress` mora, este também mora**: os dois são do TIPO e não
+   * mudam com o idioma, ao contrário de `progress_unit`. A unidade do tempo não
+   * é campo nenhum — é sempre minuto no banco e sempre `2h30` na tela.
+   */
+  tracksTime: integer('tracks_time', { mode: 'boolean' })
+    .notNull()
+    .default(false),
   /**
    * O provedor PADRÃO deste tipo — quem responde a busca dele (brief, 3.10,
    * 01/09/2026; escopo reduzido à busca em 02/09).
@@ -127,9 +155,16 @@ export const mediaTypes = sqliteTable('media_types', {
  * muda em inglês e em pt-BR a regra é outra — concatenar é o que trava tradução
  * (brief, 3.8).
  *
- * `progressUnit` é nulo de propósito em dois casos diferentes: filme não conta
- * nada, e jogo conta sem ter unidade natural (uns contam horas, outros
- * capítulos, outros conquistas). Impor "horas" decidiria pelo usuário.
+ * `progressUnit` é nulo em todo tipo que não conta — filme, jogo e, desde a
+ * `0048`, livro. **Unidade ao lado de um tipo sem contador é um par que a tela
+ * não sabe explicar**, e a linha de `/settings/media-types` mostra os dois.
+ *
+ * O motivo de cada nulo é diferente, e vale registrar: filme não tem o que
+ * contar; jogo contaria sem unidade natural (uns contam horas, outros
+ * capítulos, outros conquistas), e impor "horas" decidiria pelo usuário; livro
+ * conta páginas de verdade, e o dono decidiu que o produto não as pede — a
+ * pergunta que sobra ("quantas páginas tem?") já tem resposta por OBRA, em
+ * `entries.total`.
  */
 export const mediaTypeNames = sqliteTable(
   'media_type_names',

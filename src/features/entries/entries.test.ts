@@ -109,6 +109,10 @@ describe('POST /api/entries', () => {
       notes: null,
       progress: 0,
       total: null,
+      // Ninguém nasce com horas registradas, e NULO é diferente de zero: zero é
+      // "registrei, e é zero". A tela usa a distinção pra não escrever `0h` em
+      // toda obra nova.
+      timeSpent: null,
       // Digitada à mão não tem de onde tirar arte, e o nulo é o que faz a tela
       // desenhar o ladrilho em vez de pedir uma imagem que não existe.
       art: null,
@@ -1234,6 +1238,106 @@ describe('a obra que nasce com fonte aquece o cache de arte', () => {
     expect(res.status).toBe(201)
     await vi.waitFor(() => {
       expect(fetchSpy).toHaveBeenCalled()
+    })
+  })
+})
+
+describe('tempo investido', () => {
+  it('grava minutos, e ele NÃO passa pelo log de progresso', async () => {
+    // Tempo não é progresso: *quanto do acervo você percorreu* tem unidade,
+    // denominador e fim; *quanto tempo você investiu* não tem nenhum dos três.
+    // Por isso é campo e não contador — e por isso `progress` não se mexe.
+    const cookie = await signUp('fernando')
+    const { id } = await createEntry(cookie, {
+      mediaType: 'game',
+      title: 'Elden Ring',
+    })
+
+    const res = await app.request(`/api/entries/${id}`, {
+      method: 'PATCH',
+      headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ timeSpent: 2280 }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(
+      (await res.json()) as { timeSpent: number; progress: number },
+    ).toMatchObject({
+      timeSpent: 2280,
+      progress: 0,
+    })
+  })
+
+  it('`null` LIMPA, e ausente não mexe', async () => {
+    // As três formas são distintas de propósito: sem elas não haveria como
+    // desfazer, e `0` é "registrei, e é zero".
+    const cookie = await signUp('fernando')
+    const { id } = await createEntry(cookie, {
+      mediaType: 'game',
+      title: 'Elden Ring',
+    })
+
+    const patch = (body: unknown) =>
+      app.request(`/api/entries/${id}`, {
+        method: 'PATCH',
+        headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+
+    await patch({ timeSpent: 90 })
+
+    const untouched = await patch({ notes: 'nada a ver' })
+    expect((await untouched.json()) as { timeSpent: number }).toMatchObject({
+      timeSpent: 90,
+    })
+
+    const cleared = await patch({ timeSpent: null })
+    expect((await cleared.json()) as { timeSpent: null }).toMatchObject({
+      timeSpent: null,
+    })
+
+    const zero = await patch({ timeSpent: 0 })
+    expect((await zero.json()) as { timeSpent: number }).toMatchObject({
+      timeSpent: 0,
+    })
+  })
+
+  it('recusa minuto negativo e fracionário', async () => {
+    // A coluna é inteira porque a UNIDADE é minuto — decimal aqui seria a
+    // primeira fração do schema, e ela viria só por causa da unidade escolhida
+    // na exibição.
+    const cookie = await signUp('fernando')
+    const { id } = await createEntry(cookie, {
+      mediaType: 'game',
+      title: 'Elden Ring',
+    })
+
+    for (const timeSpent of [-1, 1.5]) {
+      const res = await app.request(`/api/entries/${id}`, {
+        method: 'PATCH',
+        headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timeSpent }),
+      })
+      expect(res.status).toBe(400)
+    }
+  })
+
+  it('CRIAR não aceita o campo', async () => {
+    // Obra nenhuma nasce com quarenta horas jogadas. O campo é acompanhamento,
+    // como o progresso — e é a régua de *duas formas de uso são dois SCHEMAS*.
+    const cookie = await signUp('fernando')
+    const res = await app.request('/api/entries', {
+      method: 'POST',
+      headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mediaType: 'game',
+        title: 'Elden Ring',
+        timeSpent: 2280,
+      }),
+    })
+
+    expect((await res.json()) as { timeSpent: number | null }).toMatchObject({
+      timeSpent: null,
     })
   })
 })

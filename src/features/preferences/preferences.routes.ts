@@ -83,5 +83,86 @@ export const setMediaTypes = createRoute({
   },
 })
 
+/**
+ * A fonte que este usuário prefere para buscar cada tipo.
+ *
+ * **Um mapa, e a ausência de uma chave é o padrão da instância** — não há
+ * entrada nula: quem nunca escolheu não aparece, e a busca cai no efetivo. É a
+ * mesma assimetria de `hidden`, e pelo mesmo motivo (tipo criado depois nasce
+ * seguindo o admin, sem semear nada).
+ *
+ * **O que volta já está validado contra a associação:** um par que deixou de
+ * existir não aparece aqui, então a tela não desenha um seletor apontando pra
+ * uma fonte que a busca recusaria.
+ */
+const SearchSourcesSchema = z
+  .object({
+    sources: z.record(z.string(), z.string()),
+  })
+  .openapi('SearchSources')
+
+/**
+ * A escrita é de UM tipo, ao contrário da de visibilidade.
+ *
+ * **Substituir o conjunto inteiro exige mostrar o conjunto inteiro** (design
+ * system, seção 5), e `/search` mostra um tipo por vez: o gesto é *escolher a
+ * fonte DESTE tipo*, e mandar o mapa todo faria uma busca em `anime` reafirmar
+ * o que vale pra `manga` sem ninguém ter olhado pra isso.
+ *
+ * `provider: null` desfaz a escolha em vez de gravar "nenhuma" — não ter fonte
+ * preferida é um estado, e ele já tem representação: a linha não existe.
+ */
+const SetSearchSourceSchema = z.object({
+  provider: z.string().min(1).nullable(),
+})
+
+export const getSearchSources = createRoute({
+  method: 'get',
+  path: '/search-sources',
+  tags: ['Preferences'],
+  responses: {
+    200: {
+      content: { 'application/json': { schema: SearchSourcesSchema } },
+      description: 'The search source this user prefers for each media type',
+    },
+    401: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'No active session',
+    },
+  },
+})
+
+export const setSearchSource = createRoute({
+  method: 'put',
+  path: '/search-sources/{mediaType}',
+  tags: ['Preferences'],
+  request: {
+    params: z.object({ mediaType: z.string().min(1) }),
+    body: {
+      content: { 'application/json': { schema: SetSearchSourceSchema } },
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: SearchSourcesSchema } },
+      description: 'The preference was saved',
+    },
+    400: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'That provider does not serve that media type',
+    },
+    401: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'No active session',
+    },
+    404: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'No media type with that slug',
+    },
+  },
+})
+
 export type GetMediaTypesRoute = typeof getMediaTypes
 export type SetMediaTypesRoute = typeof setMediaTypes
+export type GetSearchSourcesRoute = typeof getSearchSources
+export type SetSearchSourceRoute = typeof setSearchSource

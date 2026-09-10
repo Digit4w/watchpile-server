@@ -330,6 +330,48 @@
       "when": 1788849846046,
       "tag": "0046_subtype_acronyms",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "6",
+      "when": 1789019307551,
+      "tag": "0047_mal_fields_union",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "6",
+      "when": 1789105707551,
+      "tag": "0048_book_not_counted",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "6",
+      "when": 1789192107551,
+      "tag": "0049_tracked_time",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "6",
+      "when": 1789278507551,
+      "tag": "0050_unit_group_label",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "6",
+      "when": 1789364907551,
+      "tag": "0051_preferred_search_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "6",
+      "when": 1789451307551,
+      "tag": "0052_update_check",
+      "breakpoints": true
     }
   ]
 }

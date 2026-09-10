@@ -38,6 +38,8 @@ export type MediaTypeTemplate = {
   icon: IconName
   /** Há o que contar? `movie` e `game` dizem que não (07/09/2026). */
   countsProgress: boolean
+  /** Registra tempo investido? Só `game` nasce ligado (10/09/2026). */
+  tracksTime: boolean
   names: NameMap
 }
 
@@ -62,6 +64,7 @@ export const MEDIA_TYPE_TEMPLATES: readonly MediaTypeTemplate[] = [
     slug: 'movie',
     icon: 'clapperboard',
     countsProgress: false,
+    tracksTime: false,
     names: {
       en: { name: 'Movie', plural: 'Movies', progressUnit: null },
       'pt-BR': { name: 'Filme', plural: 'Filmes', progressUnit: null },
@@ -71,6 +74,7 @@ export const MEDIA_TYPE_TEMPLATES: readonly MediaTypeTemplate[] = [
     slug: 'tv',
     icon: 'monitor',
     countsProgress: true,
+    tracksTime: false,
     names: {
       en: { name: 'Series', plural: 'Series', progressUnit: 'Episodes' },
       'pt-BR': { name: 'Série', plural: 'Séries', progressUnit: 'Episódios' },
@@ -80,6 +84,7 @@ export const MEDIA_TYPE_TEMPLATES: readonly MediaTypeTemplate[] = [
     slug: 'anime',
     icon: 'sparkles',
     countsProgress: true,
+    tracksTime: false,
     names: {
       en: { name: 'Anime', plural: 'Anime', progressUnit: 'Episodes' },
       'pt-BR': { name: 'Anime', plural: 'Animes', progressUnit: 'Episódios' },
@@ -89,6 +94,7 @@ export const MEDIA_TYPE_TEMPLATES: readonly MediaTypeTemplate[] = [
     slug: 'manga',
     icon: 'message-square',
     countsProgress: true,
+    tracksTime: false,
     names: {
       en: { name: 'Manga', plural: 'Manga', progressUnit: 'Chapters' },
       'pt-BR': { name: 'Mangá', plural: 'Mangás', progressUnit: 'Capítulos' },
@@ -98,6 +104,7 @@ export const MEDIA_TYPE_TEMPLATES: readonly MediaTypeTemplate[] = [
     slug: 'game',
     icon: 'gamepad-2',
     countsProgress: false,
+    tracksTime: true,
     names: {
       en: { name: 'Game', plural: 'Games', progressUnit: null },
       'pt-BR': { name: 'Jogo', plural: 'Jogos', progressUnit: null },
@@ -106,10 +113,15 @@ export const MEDIA_TYPE_TEMPLATES: readonly MediaTypeTemplate[] = [
   {
     slug: 'book',
     icon: 'book-open',
-    countsProgress: true,
+    // Livro comum se acompanha por STATUS, como filme — 10/09/2026, decisão do
+    // dono, e a `0048` leva o estado semeado junto. A unidade sai com o
+    // contador: `Pages` ao lado de um tipo que não conta é um par que a tela
+    // não sabe explicar. Quem ligar o contador de volta digita a unidade.
+    countsProgress: false,
+    tracksTime: false,
     names: {
-      en: { name: 'Book', plural: 'Books', progressUnit: 'Pages' },
-      'pt-BR': { name: 'Livro', plural: 'Livros', progressUnit: 'Páginas' },
+      en: { name: 'Book', plural: 'Books', progressUnit: null },
+      'pt-BR': { name: 'Livro', plural: 'Livros', progressUnit: null },
     },
   },
 ]

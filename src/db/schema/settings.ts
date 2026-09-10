@@ -59,6 +59,43 @@ export const settings = sqliteTable('settings', {
    * 3.1), então não há como excluir uma coluna dele: fica registrado como o
    * custo conhecido de restaurar num endereço diferente.
    */
+  /**
+   * Se esta instalação procura versão nova — 10/09/2026, decisão do dono:
+   * **ligada, com como desligar**.
+   *
+   * É a **única saída para fora** que o servidor faz sem alguém ter pedido, e
+   * num produto self-hosted isso pede consentimento legível. Ligada por padrão
+   * porque a alternativa medida (nascer desligada) deixa a maioria sem nunca
+   * ser avisada de uma versão com correção de segurança; desligável porque a
+   * postura do produto é a que fez o cache de arte existir — não vazar o que a
+   * pessoa tem.
+   *
+   * **O que vaza mesmo ligada é o IP e o instante**, e nada mais: a consulta é
+   * um `GET` público na API de releases do GitHub, sem corpo e sem
+   * identificador. A versão instalada **não** viaja — a comparação acontece
+   * aqui.
+   */
+  updateCheckEnabled: integer('update_check_enabled', { mode: 'boolean' })
+    .notNull()
+    .default(true),
+  /**
+   * Quando a última consulta ACONTECEU, não quando ela achou algo.
+   *
+   * É o que segura a cadência: sem ele, reconciliar na leitura bateria no
+   * GitHub a cada abertura do sino. Carimbado mesmo quando a consulta **falha**
+   * — senão uma instalação sem rede tentaria a cada leitura, que é o oposto do
+   * que a cadência existe pra evitar.
+   */
+  updateCheckedAt: integer('update_checked_at', { mode: 'timestamp' }),
+  /**
+   * A versão mais nova que a última consulta viu, e onde lê-la.
+   *
+   * Guardadas porque a condição de notificação é derivada de ESTADO, sem rede:
+   * `reconcileInstanceConditions` roda em toda leitura de admin, e uma
+   * condição que precisasse de `fetch` faria o sino esperar a internet.
+   */
+  updateLatestVersion: text('update_latest_version'),
+  updateLatestUrl: text('update_latest_url'),
   bindHost: text('bind_host'),
 
   createdAt: integer('created_at', { mode: 'timestamp' })

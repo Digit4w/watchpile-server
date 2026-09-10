@@ -11,5 +11,7 @@ import * as routes from './preferences.routes.js'
 const router = createRouter()
   .openapi(routes.getMediaTypes, handlers.getMediaTypes)
   .openapi(routes.setMediaTypes, handlers.setMediaTypes)
+  .openapi(routes.getSearchSources, handlers.getSearchSources)
+  .openapi(routes.setSearchSource, handlers.setSearchSource)
 
 export default router

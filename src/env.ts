@@ -45,6 +45,15 @@ const EnvSchema = z.object({
   // Art cache (brief, 3.10). Next to the database on purpose: the Dockerfile
   // mounts a single /data volume, and art living outside it would be lost on
   // every container replacement -- silently, since it regenerates.
+  // Where to look for a newer version. The default is this product's own
+  // repository; a fork points it at its own without touching code. Override,
+  // never a requirement — an install with no value still checks, and one that
+  // wants no check at all turns the check off in Settings, which is the
+  // control a person can find.
+  WATCHPILE_UPDATE_REPO: z
+    .string()
+    .regex(/^[\w.-]+\/[\w.-]+$/)
+    .default('Digit4w/watchpile-server'),
   WATCHPILE_ART_CACHE_PATH: z.string().min(1).default('./data/art'),
   // The ceiling the brief asks for, in megabytes. A w342 poster is ~40KB, so
   // 256MB is on the order of six thousand of them -- generous for a home

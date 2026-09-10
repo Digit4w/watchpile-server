@@ -4,6 +4,7 @@ import {
   effectiveProviderOf,
   mediaTypeExists,
 } from '../media-types/media-types.query.js'
+import { preferredSourceFor } from '../preferences/preferences.search-sources.js'
 import {
   type SearchOutcome,
   searchProvider,
@@ -24,6 +25,20 @@ type Refusal = Extract<SearchOutcome, { ok: false }>
  * `rate-limited` só precisa esperar. Uma frase genérica mandaria os três pro
  * mesmo lugar errado.
  */
+/**
+ * A frase do provedor, quando o motivo a carrega.
+ *
+ * Só `provider-refused` tem o campo, e a checagem é por REASON e não por
+ * presença: `'detail' in refusal` compilaria e diria a mesma coisa hoje, mas
+ * pararia de dizer no dia em que outro motivo ganhasse um campo de mesmo nome.
+ */
+function detailOf(refusal: {
+  reason: string
+  detail?: string | null
+}): string | null {
+  return refusal.reason === 'provider-refused' ? (refusal.detail ?? null) : null
+}
+
 function refusalMessage(
   refusal: Refusal,
   /**
@@ -115,6 +130,7 @@ export const search: AppRouteHandler<SearchRoute> = async (c) => {
 
   const choice = chooseSearchProvider({
     requested: requestedProvider ?? null,
+    preferred: preferredSourceFor(user.id, type),
     effective: effectiveProviderOf(
       defaultProviderOf(type),
       associated.map(({ provider }) => provider.slug),
@@ -133,7 +149,11 @@ export const search: AppRouteHandler<SearchRoute> = async (c) => {
     }
     const refusal = { ok: false, reason: 'no-provider' } as const
     return c.json(
-      { message: refusalMessage(refusal, names), reason: refusal.reason },
+      {
+        message: refusalMessage(refusal, names),
+        reason: refusal.reason,
+        providerMessage: detailOf(refusal),
+      },
       503,
     )
   }
@@ -149,7 +169,11 @@ export const search: AppRouteHandler<SearchRoute> = async (c) => {
   if (!chosen) {
     const refusal = { ok: false, reason: 'no-provider' } as const
     return c.json(
-      { message: refusalMessage(refusal, names), reason: refusal.reason },
+      {
+        message: refusalMessage(refusal, names),
+        reason: refusal.reason,
+        providerMessage: detailOf(refusal),
+      },
       503,
     )
   }
@@ -162,7 +186,11 @@ export const search: AppRouteHandler<SearchRoute> = async (c) => {
 
   if (!outcome.ok) {
     return c.json(
-      { message: refusalMessage(outcome, names), reason: outcome.reason },
+      {
+        message: refusalMessage(outcome, names),
+        reason: outcome.reason,
+        providerMessage: detailOf(outcome),
+      },
       503,
     )
   }

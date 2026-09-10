@@ -67,7 +67,8 @@ server/
 ├── Dockerfile
 ├── .dockerignore
 ├── compose.yaml
-├── README.md            # face pública — "Plano de distribuição"
+├── README.md            # face pública, em INGLÊS — é o CANÔNICO
+├── README.pt-BR.md      # a tradução, que corre atrás
 ├── biome.json
 ├── lefthook.yml
 ├── vitest.config.ts
@@ -388,6 +389,101 @@ Quatro coisas que valem ao mexer nisto:
   cliente (`domain/shows-counter.ts`); aqui nada muda, e `total` continua sendo
   dado do usuário. **`1` e `null` são opostos** — num não há o que contar, no
   outro há e não se sabe quanto
+
+**A fonte da BUSCA tem um degrau de usuário — 10/09/2026** (brief, 3.9 e 3.10).
+`preferred_search_sources` (`0051`), uma linha por (usuário, tipo), no molde de
+`hidden_media_types`. **Não é `media_types.default_provider_slug`**, e a
+diferença é a régua de 30/08: aquela coluna diz *quem responde a busca neste
+servidor* e é do admin, guardada por `adminMiddleware`; esta diz *com que fonte
+EU busco*. Escrever a primeira a partir de `/search` faria um não-admin trocar o
+padrão de todo mundo — invisível hoje, porque nenhuma rota cria um segundo
+usuário, e verdadeiro no dia em que uma criar.
+
+- **`chooseSearchProvider` tem QUATRO degraus**, e o novo entra entre o pedido
+  explícito e o efetivo. A precedência inteira mora aqui: a tela lê o mapa só
+  pra desenhar o valor atual do seletor, e o `?provider=` continua sendo *desta
+  vez, outra fonte*
+- **A leitura VALIDA contra a junção.** A FK cobre o tipo e o provedor sumirem,
+  **não o par entre eles cair** — que é o gesto normal de desassociar. Sem a
+  validação, a busca recusaria com `not-associated` por causa de uma escolha
+  antiga que ninguém tem como ver nem desfazer. A linha órfã **fica no banco**:
+  reassociar o par a torna válida de novo
+- **A escrita é de UM tipo**, ao contrário da de visibilidade — *substituir o
+  conjunto inteiro exige mostrar o conjunto inteiro*, e `/search` mostra um tipo
+  por vez. `provider: null` desfaz a escolha, porque não ter preferência já tem
+  representação: a linha não existir
+- **O spec de `chooseSearchProvider` não foi checado pelo compilador.**
+  `tsconfig.json` exclui `*.spec.ts`, então nove chamadas ficaram sem o campo
+  novo e a suíte passou — `undefined` é falso. Mesma forma dos seis `insert` de
+  teste de 07/09: **a rede que pega uma mudança de assinatura não é
+  necessariamente o compilador**
+
+## Atualizar pelo próprio aplicativo — 10/09/2026
+
+`src/features/updates/`, mais `GET /api/meta` em `src/routes/` e
+`electron/updater.ts`. Do **admin, caminho inteiro**; a versão que todo mundo lê
+sai em `/api/meta`, porque `About` fica fora dos dois grupos de Settings.
+
+| Peça | Onde |
+| --- | --- |
+| A versão deste build | `src/lib/version.ts` + `src/routes/meta.*` |
+| O comparador, puro | `updates.compare.ts` + `.spec.ts` |
+| A leitura do feed do GitHub | `updates.feed.ts` |
+| Qual asset serve esta máquina, puro | `updates.asset.ts` + `.spec.ts` |
+| O estado guardado e a cadência | `updates.store.ts` + `0052_update_check.sql` |
+| O download com progresso | `updates.download.ts` |
+| O ponto de registro da capacidade | `updates.installer.ts` |
+| O que cada plataforma faz com o arquivo | `electron/updater.ts` |
+
+**Nove invariantes:**
+
+- **A versão é lida SUBINDO até achar um `package.json`.** A profundidade muda
+  entre `src/lib/` (dev), `dist/lib/` (Docker) e `dist-electron/src/lib/`
+  (Electron): um `../..` fixo acerta dois e erra o terceiro **calado**, porque a
+  leitura falha e a versão vira nula numa tela que ninguém abre em CI. E **não é
+  valor gerado no build** — `providers.embedded.ts` é o precedente disso e
+  guarda SEGREDO, que não pode estar no repositório; versão pode, e o CI já lê
+  este mesmo arquivo pra nomear a imagem
+- **`/api/meta` é separada de `/health`**, que o Docker chama sem sessão:
+  pendurar a versão lá a publicaria antes do login
+- **`/releases/latest` NÃO serve, e isso foi medido.** Ele exclui pre-release e
+  responde **404** neste produto. Pre-release **conta** enquanto for o que
+  publicamos; um interruptor pra ligá-las seria vocabulário que nada exercita
+- **A mais nova é por VERSÃO, não pela ordem da lista.** A API ordena por data
+  de criação, e o CI **reaproveita uma release existente** quando a `main` é
+  repromovida sem subir a versão
+- **O comparador é nosso**, porque o formato que emitimos é `x.y.z` e nada mais
+  (seção 8). **O que não casa responde "não é mais nova"**: o outro lado é
+  string de terceiro, e afirmar atualização errado manda a pessoa reinstalar o
+  que já tem
+- **A condição de notificação é derivada de ESTADO, sem rede.** Ela roda em toda
+  leitura de admin do sino; quem consulta o GitHub dispara dali e **não é
+  esperado**, senão o sino dependeria da internet pra abrir. O sujeito da chave
+  de dedupe é a **versão**, e é isso que faz o aviso nascer uma vez por versão e
+  **se dispensar sozinho ao atualizar**. Ele tem **prefixo próprio**, porque
+  `dismissResolved` varre por prefixo e dividir um com os provedores faria cada
+  metade dispensar os avisos da outra
+- **`updateCheckedAt` é carimbado mesmo quando a consulta FALHA.** Sem isso uma
+  instalação sem rede tentaria a cada leitura, que é o oposto da cadência.
+  **Desligar a checagem esquece o que já foi visto**, senão a tela seguiria
+  afirmando uma versão nova a partir de uma pergunta recusada
+- **A capacidade de instalar é REGISTRADA, e é uma função.** O cliente não pode
+  detectar o ambiente e o servidor não pode importar o Electron (3.4, os dois
+  lados), então o wrapper registra antes de `startServer()`. **No Docker ninguém
+  registra**, e as rotas de baixar e instalar respondem 409 — a tela mostra o
+  comando. **A frase de como termina viaja junto**, porque as três plataformas
+  terminam diferente
+- **Asset sem etiqueta de arquitetura é o build x64**, porque a matriz é
+  `macos-latest` (arm64), `ubuntu-latest` e `windows-latest` (x64). Fora do x64
+  só serve o que declara a arquitetura, e **Mac Intel e Linux ARM não têm asset
+  hoje** — a rota responde `no-asset` em vez de entregar binário que não roda
+
+**O estado do download vive em MEMÓRIA, e o arquivo também.** Ele fica no
+diretório temporário do sistema, então os dois morrem juntos no próximo boot —
+gravar um `ready` apontando pra um caminho que não existe mais seria promessa que
+se quebra sozinha. **`POST /api/updates/install` responde 202 antes de aplicar**,
+porque `apply` termina o processo: esperar penduraria a requisição até a conexão
+cair, e a tela leria isso como falha do que deu certo.
 
 **Apagar tipo em uso recusa com a contagem.** O admin pode tentar apagar um tipo
 que obras de OUTRO usuário usam; a resposta é recusa com quantas obras o usam, e
@@ -1317,6 +1413,93 @@ nomes é o mesmo dos vínculos: **`default_provider_slug` é a escolha crua**
 - **`piles` ganha `description` nulável** (brief, 3.17). E **não** ganha marca de
   pile de sistema: a direção foi revertida em 29/08/2026 — toda pilha é do
   usuário e apagável, sem exceção no handler de delete
+- **`field_map` e `endpoints.query` são DUAS contas da mesma coisa, e a segunda é
+  MUDA — 09/09/2026** (brief, 3.10). O primeiro diz o que LER da resposta, o
+  segundo diz o que PEDIR. Quando o primeiro cresce sem o segundo, **o defeito não
+  tem como aparecer**: caminho ausente devolve nulo, e nulo é estado legítimo em
+  quase todo campo do mapa. No MyAnimeList isso escondeu **três** coisas por
+  meses — a busca não pedia total em tipo nenhum (o que tornava **inerte** o
+  conserto do mesmo dia que fazia o total chegar até a tela), o detalhe de mangá
+  não pedia `num_chapters`, e não pedia `related_manga`, então **mangá nenhum
+  jamais mostrou um vínculo**: a seção existia e nunca teve o que renderizar.
+  **`query` é do PROVEDOR** e o conteúdo dele era anime-only, enquanto um
+  comentário na semente afirmava que *"os dois pares trazem o seu `fields`"* —
+  **esse mecanismo não existe**: o par sobrescreve `path` e `body`, nunca `query`.
+  A saída é a **união no provedor** (`0047`, decisão do dono), medida: o MAL
+  ignora em silêncio o campo que não se aplica ao tipo. Coluna de query no par
+  seria a **quinta** propriedade a fazer o caminho *o que pertence ao par se
+  declara*, e é o certo no dia em que um segundo provedor precisar — hoje só o MAL
+  usa `fields` com mais de um tipo. **Comentário que descreve um mecanismo
+  INEXISTENTE é pior que comentário desatualizado:** o desatualizado contradiz o
+  código e alguém tropeça; este afirmava que o problema já estava resolvido, então
+  ninguém foi conferir
+- **O import do MAL passou a trazer o TOTAL, e o argumento que o descartava tinha
+  ENVELHECIDO — 09/09/2026** (brief, 3.12). O leitor escrevia `total: null` com um
+  comentário dizendo que pedi-lo custaria `fields` em toda página *"para um dado
+  que a tela de detalhe busca quando precisa"* — mas **a tela de detalhe não é
+  mais o único lugar que mostra o total**, e o `12 / ?` da 3.11 é o estado de *não
+  se sabe*, **não de *não pedimos***. O custo estava superestimado: `fields` é
+  query string, não uma requisição a mais. `fields=list_status,num_episodes` em
+  anime e `,num_chapters` em mangá, com **zero lido como DESCONHECIDO** — medido:
+  *One Piece* em exibição devolve `0` e *Monster*, terminado, devolve 162. O
+  `paging.next` devolve o `fields` inteiro de volta, então a segunda página não
+  perde o campo. **A metade retroativa não precisou de código:** `overwriteState`
+  já escreve `total`, então re-importar com `Overwrite` conserta a biblioteca que
+  nasceu sem denominador
+- **Um relato pode ser a ponta de um defeito estrutural — 09/09/2026.** O relatado
+  era `Year unknown` em toda carta de recomendação do MAL, e escrever `year` no
+  mapa o teria fechado deixando os três acima de pé. **O que separa os dois é
+  MEDIR em vez de consertar o sintoma**, que é a régua daquele provedor desde
+  07/09: a referência oficial dele não traz uma amostra de resposta sequer, e a
+  sub-seleção (`recommendations{node{start_date}}`) só se sabe que funciona
+  batendo nela
+- **A junção tipo↔provedor virou ESCRITA, e ela é uma RECEITA — 10/09/2026**
+  (brief, 3.10). Ela era só lida desde que nasceu, e a consequência não estava
+  escrita: **tipo criado pelo admin nascia sem fonte pra sempre**. Medir mudou o
+  recorte antes da primeira linha — a linha carrega `search_body`, `field_map`,
+  `detail_path`, `provider_type_token` e mais, e **nenhum dos doze pares semeados
+  funciona vazio**: um `Light Novel` ligado ao AniList com a linha em branco
+  herdaria `anilistSearch('ANIME')` do provedor e devolveria **anime** pra toda
+  busca, plausível e sem erro. Então `PUT /api/media-types/{slug}/providers/
+  {provider}` **copia a receita** de um tipo que aquele provedor já serve —
+  provada, porque está respondendo agora. **`RECIPE_COLUMNS` é lista nomeada e
+  não spread**: a chave primária não é receita, e **coluna nova na junção precisa
+  entrar ali** — esquecer não dá erro, só produz par pela metade. `DELETE` recusa
+  com a contagem, porque `bindingFor` é o que serve arte, detalhe e resolução:
+  sem a linha as três param sem nada dizer por quê, e o padrão de busca que
+  apontava pra ali é limpo junto
+- **`router.use('/:slug')` NÃO cobre `/:slug/qualquer/coisa` — 10/09/2026.** Ele
+  casa um segmento e para ali. Sem uma guarda para `/:slug/*`, as duas rotas
+  novas nasceriam abertas a qualquer sessão, e **a proteção pareceria estar
+  cobrindo o que não cobre**. Há um teste que afirma isso, e ele fica vermelho
+  sem a linha — é a mesma família do `htmlFor` apontando pra id inexistente:
+  escrito, plausível, e sem efeito
+- **Tempo investido não é progresso — 10/09/2026** (brief, 3.12). `media_types.
+  tracks_time` diz se o tipo registra; `entries.time_spent` guarda **minutos
+  inteiros**. A decisão mora no TIPO porque audiolivro, podcast e curso têm o
+  mesmo formato; o minuto é inteiro porque decimal na coluna seria a primeira
+  fração do schema, e viria só por causa da unidade escolhida na exibição.
+  **Campo simples e não log**, ao contrário de `progress`: aqui não há histórico
+  — uma tabela de SESSÕES responderia "quando eu joguei" tão bem quanto "quanto",
+  e é feature própria. **Criar não aceita o campo** (*duas formas de uso são dois
+  schemas*), e `null`/ausente/`0` são três coisas distintas. Só `game` nasce
+  ligado, e **sem guarda de estado semeado**: a coluna está nascendo, então não há
+  decisão de admin anterior a preservar
+- **O coletivo dos grupos de unidade é declarado no PAR — 10/09/2026** (brief,
+  3.10). O `name` de cada grupo já vinha do provedor, e a semente dizia que **o
+  produto nunca decide como o agrupamento se chama** — a tela contradizia, com
+  `Seasons` em código pra todo tipo de mídia. Medido: **só `(tv, tmdb)` mapeia
+  `unitGroups`**, então ninguém via o defeito. **No par e não no tipo**, porque um
+  provedor pode agrupar mangá por ARCO. Ausente é legítimo, e há **dois caminhos**
+  até ele — o par não agrupa, ou o par agrupa e a obra não tem grupo: só o
+  segundo precisa de guarda, e ela precisou de teste próprio porque o primeiro já
+  dava nulo sozinho. **É a única string de UI que vive na definição de um
+  provedor**
+- **Teste que apaga estado SEMEADO envenena os vizinhos — 10/09/2026.** O bloco
+  que testa desvincular removia um par da instalação base, e o sintoma chegava
+  como `404` num teste que não fala de junção nenhuma. O retrato se tira na
+  **primeira passagem** e não no corpo do `describe`, que roda na COLETA — antes
+  de qualquer `beforeEach`, num estado que não é o que os testes vão ver
 - **v1 tem só TMDB** (filmes e séries). Os outros entram um por vez (3.12)
 
 ## O banco em WAL, e import em lotes
@@ -1853,6 +2036,28 @@ adicionada depois exige consentimento de todo mundo que já contribuiu.
 
 Consequência no dia a dia: **dependência nova precisa de licença compatível**. Checar
 antes de adicionar ao `package.json`, não depois.
+
+## O README é bilíngue, e o INGLÊS é o canônico
+
+10/09/2026, decisão do dono. `README.md` em inglês, `README.pt-BR.md` ao lado, e
+cada um leva no topo uma linha apontando pro outro — **o GitHub não serve README
+por idioma do navegador**, então o seletor não é enfeite: sem ele a tradução é
+invisível.
+
+- **Toda mudança futura nasce no INGLÊS**, e a tradução corre atrás. É a única
+  ordem que se sustenta: `README.md` é o que o GitHub mostra e o que um estranho
+  abre primeiro, então deixá-lo correr atrás faria justamente o arquivo mais
+  visível ser o que envelhece. **Tradução desatualizada é pior que ausência**,
+  porque afirma o que deixou de ser verdade
+- **Isto NÃO vira a regra de idioma do projeto** (`../CLAUDE.md`), e a decisão de
+  08/09/2026 continua inteira: código em inglês, **documentação e comentários em
+  português**. O que ganha inglês é a **superfície pública**, e ela é pequena —
+  os dois documentos-fonte vivem na raiz não versionada, então sobram o README e
+  os `CLAUDE.md`. Os ~19.000 comentários **não** se traduzem: eles são o registro
+  de raciocínio mais denso do projeto, e tradução mecânica destruiria o que os
+  torna valiosos
+- **O `client/` tem o seu**, curto e bilíngue pelo mesmo par de arquivos. Ele
+  não repete instalação — quem instala Watchpile instala o servidor
 
 ## Lint, formato e testes
 

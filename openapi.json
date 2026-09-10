@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Watchpile API",
-    "version": "0.0.0"
+    "version": "0.1.0"
   },
   "components": {
     "schemas": {
@@ -114,6 +114,12 @@
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
           },
+          "timeSpent": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -136,6 +142,7 @@
           "notes",
           "progress",
           "total",
+          "timeSpent",
           "createdAt",
           "updatedAt",
           "art"
@@ -328,6 +335,16 @@
         },
         "required": ["kind"]
       },
+      "ServerMeta": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": ["version"]
+      },
       "NetworkSettings": {
         "type": "object",
         "properties": {
@@ -408,7 +425,8 @@
               "provider-embedded-key",
               "art-cache-full",
               "import-finished",
-              "import-failed"
+              "import-failed",
+              "update-available"
             ]
           },
           "params": {
@@ -457,6 +475,18 @@
         },
         "required": ["hidden"]
       },
+      "SearchSources": {
+        "type": "object",
+        "properties": {
+          "sources": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["sources"]
+      },
       "StorageUsage": {
         "type": "object",
         "properties": {
@@ -495,6 +525,81 @@
           }
         },
         "required": ["files", "bytes", "limitBytes"]
+      },
+      "UpdateState": {
+        "type": "object",
+        "properties": {
+          "current": {
+            "type": "string",
+            "nullable": true
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "latest": {
+            "type": "string",
+            "nullable": true
+          },
+          "latestUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "checkedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "updateAvailable": {
+            "type": "boolean"
+          },
+          "canInstall": {
+            "type": "boolean"
+          },
+          "installHint": {
+            "type": "string",
+            "nullable": true
+          },
+          "download": {
+            "$ref": "#/components/schemas/UpdateDownload"
+          }
+        },
+        "required": [
+          "current",
+          "enabled",
+          "latest",
+          "latestUrl",
+          "checkedAt",
+          "updateAvailable",
+          "canInstall",
+          "installHint",
+          "download"
+        ]
+      },
+      "UpdateDownload": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": ["idle", "downloading", "ready", "failed"]
+          },
+          "version": {
+            "type": "string",
+            "nullable": true
+          },
+          "received": {
+            "type": "integer",
+            "nullable": true
+          },
+          "total": {
+            "type": "integer",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true,
+            "enum": ["no-asset", "no-release", "failed", null]
+          }
+        },
+        "required": ["state", "version", "received", "total", "reason"]
       }
     },
     "parameters": {}
@@ -2057,6 +2162,11 @@
                     "minimum": 0,
                     "maximum": 9007199254740991,
                     "exclusiveMinimum": true
+                  },
+                  "timeSpent": {
+                    "type": "integer",
+                    "nullable": true,
+                    "minimum": 0
                   }
                 }
               }
@@ -3107,6 +3217,10 @@
                         "required": ["number", "name", "count", "art"]
                       }
                     },
+                    "unitGroupLabel": {
+                      "type": "string",
+                      "nullable": true
+                    },
                     "hasUnits": {
                       "type": "boolean"
                     },
@@ -3146,6 +3260,7 @@
                     "links",
                     "ownedEntryId",
                     "unitGroups",
+                    "unitGroupLabel",
                     "hasUnits",
                     "snapshot"
                   ]
@@ -4821,6 +4936,9 @@
                       "countsProgress": {
                         "type": "boolean"
                       },
+                      "tracksTime": {
+                        "type": "boolean"
+                      },
                       "entryCount": {
                         "type": "integer"
                       },
@@ -4870,6 +4988,7 @@
                       "slug",
                       "icon",
                       "countsProgress",
+                      "tracksTime",
                       "entryCount",
                       "name",
                       "plural",
@@ -5012,6 +5131,10 @@
                     "type": "boolean",
                     "default": true
                   },
+                  "tracksTime": {
+                    "type": "boolean",
+                    "default": false
+                  },
                   "names": {
                     "type": "object",
                     "additionalProperties": {
@@ -5054,6 +5177,9 @@
                       "type": "string"
                     },
                     "countsProgress": {
+                      "type": "boolean"
+                    },
+                    "tracksTime": {
                       "type": "boolean"
                     },
                     "entryCount": {
@@ -5105,6 +5231,7 @@
                     "slug",
                     "icon",
                     "countsProgress",
+                    "tracksTime",
                     "entryCount",
                     "name",
                     "plural",
@@ -5270,6 +5397,9 @@
                       "countsProgress": {
                         "type": "boolean"
                       },
+                      "tracksTime": {
+                        "type": "boolean"
+                      },
                       "names": {
                         "type": "object",
                         "additionalProperties": {
@@ -5299,6 +5429,7 @@
                       "slug",
                       "icon",
                       "countsProgress",
+                      "tracksTime",
                       "names",
                       "installed"
                     ]
@@ -5465,6 +5596,10 @@
                     "type": "boolean",
                     "default": true
                   },
+                  "tracksTime": {
+                    "type": "boolean",
+                    "default": false
+                  },
                   "names": {
                     "type": "object",
                     "additionalProperties": {
@@ -5510,6 +5645,9 @@
                       "type": "string"
                     },
                     "countsProgress": {
+                      "type": "boolean"
+                    },
+                    "tracksTime": {
                       "type": "boolean"
                     },
                     "entryCount": {
@@ -5561,6 +5699,7 @@
                     "slug",
                     "icon",
                     "countsProgress",
+                    "tracksTime",
                     "entryCount",
                     "name",
                     "plural",
@@ -5719,6 +5858,400 @@
                     }
                   },
                   "required": ["message", "entryCount"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/media-types/{slug}/providers/{provider}": {
+      "put": {
+        "tags": ["Media types"],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "slug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "provider",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "copyFrom": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["copyFrom"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The provider now serves this media type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "slug": {
+                      "type": "string"
+                    },
+                    "icon": {
+                      "type": "string"
+                    },
+                    "countsProgress": {
+                      "type": "boolean"
+                    },
+                    "tracksTime": {
+                      "type": "boolean"
+                    },
+                    "entryCount": {
+                      "type": "integer"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "plural": {
+                      "type": "string"
+                    },
+                    "progressUnit": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "providers": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "effectiveProvider": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "names": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "plural": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "progressUnit": {
+                            "type": "string",
+                            "nullable": true
+                          }
+                        },
+                        "required": ["name", "plural"]
+                      }
+                    }
+                  },
+                  "required": [
+                    "slug",
+                    "icon",
+                    "countsProgress",
+                    "tracksTime",
+                    "entryCount",
+                    "name",
+                    "plural",
+                    "progressUnit",
+                    "providers",
+                    "effectiveProvider",
+                    "names"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "There is no recipe to copy from",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an admin sets the vocabulary of this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Media type or provider not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Media types"],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "slug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "provider",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The provider no longer serves this media type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "slug": {
+                      "type": "string"
+                    },
+                    "icon": {
+                      "type": "string"
+                    },
+                    "countsProgress": {
+                      "type": "boolean"
+                    },
+                    "tracksTime": {
+                      "type": "boolean"
+                    },
+                    "entryCount": {
+                      "type": "integer"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "plural": {
+                      "type": "string"
+                    },
+                    "progressUnit": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "providers": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "effectiveProvider": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "names": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "plural": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "progressUnit": {
+                            "type": "string",
+                            "nullable": true
+                          }
+                        },
+                        "required": ["name", "plural"]
+                      }
+                    }
+                  },
+                  "required": [
+                    "slug",
+                    "icon",
+                    "countsProgress",
+                    "tracksTime",
+                    "entryCount",
+                    "name",
+                    "plural",
+                    "progressUnit",
+                    "providers",
+                    "effectiveProvider",
+                    "names"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an admin sets the vocabulary of this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "That provider does not serve this media type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Titles of this type already point at this provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "entryCount": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": ["message", "entryCount"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/meta": {
+      "get": {
+        "tags": ["Meta"],
+        "responses": {
+          "200": {
+            "description": "Facts about the server answering this request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerMeta"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
                 }
               }
             }
@@ -6160,6 +6693,132 @@
           },
           "401": {
             "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/preferences/search-sources": {
+      "get": {
+        "tags": ["Preferences"],
+        "responses": {
+          "200": {
+            "description": "The search source this user prefers for each media type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchSources"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/preferences/search-sources/{mediaType}": {
+      "put": {
+        "tags": ["Preferences"],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "mediaType",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "nullable": true,
+                    "minLength": 1
+                  }
+                },
+                "required": ["provider"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The preference was saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchSources"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "That provider does not serve that media type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No media type with that slug",
             "content": {
               "application/json": {
                 "schema": {
@@ -6932,9 +7591,13 @@
                         "provider-down",
                         "unreachable"
                       ]
+                    },
+                    "providerMessage": {
+                      "type": "string",
+                      "nullable": true
                     }
                   },
-                  "required": ["message", "reason"]
+                  "required": ["message", "reason", "providerMessage"]
                 }
               }
             }
@@ -7156,6 +7819,10 @@
                         "required": ["number", "name", "count", "art"]
                       }
                     },
+                    "unitGroupLabel": {
+                      "type": "string",
+                      "nullable": true
+                    },
                     "hasUnits": {
                       "type": "boolean"
                     },
@@ -7195,6 +7862,7 @@
                     "links",
                     "ownedEntryId",
                     "unitGroups",
+                    "unitGroupLabel",
                     "hasUnits",
                     "snapshot"
                   ]
@@ -7558,6 +8226,318 @@
           },
           "403": {
             "description": "This is set by the server admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/updates": {
+      "get": {
+        "tags": ["Updates"],
+        "responses": {
+          "200": {
+            "description": "What this installation knows about newer versions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateState"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "This is for the admin of this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/updates/check": {
+      "put": {
+        "tags": ["Updates"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["enabled"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The choice was saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateState"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "This is for the admin of this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Updates"],
+        "responses": {
+          "200": {
+            "description": "The check ran, whether or not it found anything",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateState"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "This is for the admin of this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Update checking is turned off on this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/updates/download": {
+      "post": {
+        "tags": ["Updates"],
+        "responses": {
+          "202": {
+            "description": "The download started, or was already running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateState"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "This is for the admin of this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "There is nothing to download, or this install cannot apply one",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/updates/install": {
+      "post": {
+        "tags": ["Updates"],
+        "responses": {
+          "202": {
+            "description": "The installer was handed to the system",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "This is for the admin of this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Nothing has been downloaded, or this install cannot apply one",
             "content": {
               "application/json": {
                 "schema": {
