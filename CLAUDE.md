@@ -67,7 +67,8 @@ server/
 ├── Dockerfile
 ├── .dockerignore
 ├── compose.yaml
-├── README.md            # face pública — "Plano de distribuição"
+├── README.md            # face pública, em INGLÊS — é o CANÔNICO
+├── README.pt-BR.md      # a tradução, que corre atrás
 ├── biome.json
 ├── lefthook.yml
 ├── vitest.config.ts
@@ -1893,6 +1894,28 @@ adicionada depois exige consentimento de todo mundo que já contribuiu.
 
 Consequência no dia a dia: **dependência nova precisa de licença compatível**. Checar
 antes de adicionar ao `package.json`, não depois.
+
+## O README é bilíngue, e o INGLÊS é o canônico
+
+10/09/2026, decisão do dono. `README.md` em inglês, `README.pt-BR.md` ao lado, e
+cada um leva no topo uma linha apontando pro outro — **o GitHub não serve README
+por idioma do navegador**, então o seletor não é enfeite: sem ele a tradução é
+invisível.
+
+- **Toda mudança futura nasce no INGLÊS**, e a tradução corre atrás. É a única
+  ordem que se sustenta: `README.md` é o que o GitHub mostra e o que um estranho
+  abre primeiro, então deixá-lo correr atrás faria justamente o arquivo mais
+  visível ser o que envelhece. **Tradução desatualizada é pior que ausência**,
+  porque afirma o que deixou de ser verdade
+- **Isto NÃO vira a regra de idioma do projeto** (`../CLAUDE.md`), e a decisão de
+  08/09/2026 continua inteira: código em inglês, **documentação e comentários em
+  português**. O que ganha inglês é a **superfície pública**, e ela é pequena —
+  os dois documentos-fonte vivem na raiz não versionada, então sobram o README e
+  os `CLAUDE.md`. Os ~19.000 comentários **não** se traduzem: eles são o registro
+  de raciocínio mais denso do projeto, e tradução mecânica destruiria o que os
+  torna valiosos
+- **O `client/` tem o seu**, curto e bilíngue pelo mesmo par de arquivos. Ele
+  não repete instalação — quem instala Watchpile instala o servidor
 
 ## Lint, formato e testes
 
