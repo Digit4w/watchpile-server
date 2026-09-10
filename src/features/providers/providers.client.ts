@@ -9,7 +9,7 @@ import {
 } from './providers.cache.js'
 import { takeToken } from './providers.limiter.js'
 import type { ProviderRow, TypeBinding } from './providers.query.js'
-import { prose, subtypeLabel } from './providers.text.js'
+import { prose, providerMessage, subtypeLabel } from './providers.text.js'
 import { forgetToken } from './providers.token.js'
 
 /**
@@ -62,7 +62,21 @@ export type SearchOutcome =
    * Jikan. Um motivo só obrigaria a tela a reabrir o status pra decidir o tom e
    * o botão — e a régua é que **onde o servidor decide, a tela LÊ a decisão**.
    */
-  | { ok: false; reason: 'provider-refused'; provider: string; status: number }
+  | {
+      ok: false
+      reason: 'provider-refused'
+      provider: string
+      status: number
+      /**
+       * A frase que o PROVEDOR escreveu, quando ele escreveu uma — 10/09/2026.
+       *
+       * **Só no `refused`**, e é decisão: ali há o que arrumar, e a frase dele é
+       * quem diz o quê (o 401 do IGDB responde com a instrução do conserto). No
+       * `down` o corpo é quase sempre página de erro de proxy, e mostrá-la
+       * gastaria a tela pra dizer "está fora do ar" com mais palavras.
+       */
+      detail: string | null
+    }
   /** O provedor falhando do lado dele. Não há o que configurar; há o que esperar. */
   | { ok: false; reason: 'provider-down'; provider: string; status: number }
   | { ok: false; reason: 'unreachable'; provider: string }
@@ -303,6 +317,26 @@ function mapResult(
  * A troca de token que falha também segue `provider-refused`, e por coerência:
  * se houve troca de token, há credencial preenchida.
  */
+/**
+ * O corpo da recusa, sem deixar a leitura dele derrubar a recusa.
+ *
+ * Provedor que recusa não promete JSON válido — e um `json()` que lança aqui
+ * transformaria "o provedor recusou" em "erro nosso", que é a má atribuição que
+ * o `catch` largo de 02/09 já custou uma vez.
+ */
+async function readBody(response: Response): Promise<unknown> {
+  try {
+    const text = await response.text()
+    try {
+      return JSON.parse(text) as unknown
+    } catch {
+      return text
+    }
+  } catch {
+    return null
+  }
+}
+
 function refusalOf(
   provider: ProviderRow,
   status: number,
@@ -390,6 +424,12 @@ export async function searchProvider({
         reason: 'provider-refused',
         provider: provider.slug,
         status: prepared.status,
+        /**
+         * A troca de token não devolve corpo por aqui — `prepareRequest` já o
+         * consumiu decidindo. **Nulo é a resposta honesta**, e ela cai na tela
+         * de ontem: copy nossa e o status ao lado.
+         */
+        detail: null,
       }
     }
     // A rede caiu antes do token, e não depois. Para quem lê é a mesma coisa.
@@ -474,12 +514,31 @@ export async function searchProvider({
     }
 
     if (!response.ok) {
-      return {
-        ok: false,
-        reason: refusalOf(provider, response.status),
-        provider: provider.slug,
-        status: response.status,
-      }
+      const reason = refusalOf(provider, response.status)
+      /**
+       * O corpo só é lido quando ele vai a algum lugar. Ler e jogar fora seria
+       * gastar a resposta de um provedor que acabou de recusar — e no `down` a
+       * frase não vai pra tela.
+       */
+      const detail =
+        reason === 'provider-refused'
+          ? providerMessage(await readBody(response))
+          : null
+
+      return reason === 'provider-refused'
+        ? {
+            ok: false,
+            reason,
+            provider: provider.slug,
+            status: response.status,
+            detail,
+          }
+        : {
+            ok: false,
+            reason,
+            provider: provider.slug,
+            status: response.status,
+          }
     }
 
     // Continua aqui dentro: o corpo chega pela rede, e ela pode cair no meio

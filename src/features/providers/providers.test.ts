@@ -1006,6 +1006,12 @@ describe('a auth por client-credentials', () => {
       reason: 'provider-refused',
       provider: 'igdb',
       status: 400,
+      /**
+       * **A frase do provedor não chega aqui, e é o certo** — 10/09/2026. A
+       * troca de token já consumiu o corpo decidindo, e nulo cai na tela de
+       * ontem: copy nossa e o status ao lado.
+       */
+      detail: null,
     })
   })
 
@@ -1036,6 +1042,73 @@ describe('a auth por client-credentials', () => {
       reason: 'provider-refused',
       provider: 'igdb',
       status: 403,
+      // Corpo vazio: não há frase a mostrar, e nulo é a desistência silenciosa.
+      detail: null,
+    })
+  })
+
+  it('a frase que o PROVEDOR escreveu chega junto da recusa', async () => {
+    /**
+     * 10/09/2026, decisão do dono. Até aqui o motivo dele ia só pro log, e a
+     * tela dizia QUE falhou sem dizer POR QUÊ — e quem lê um `4xx` é um admin
+     * que precisa consertar algo. **O 401 do IGDB é o caso que fecha o
+     * argumento**: ele responde com a instrução do conserto.
+     */
+    const comFrase: typeof fetch = async (url) =>
+      String(url).includes('id.twitch.tv')
+        ? new Response(
+            JSON.stringify({ access_token: 'tok-abc', expires_in: 5_327_537 }),
+            { status: 200 },
+          )
+        : new Response(
+            JSON.stringify({
+              message:
+                'Ensure you are sending Authorization and Client-ID as headers',
+            }),
+            { status: 401 },
+          )
+
+    const outcome = await searchProvider({
+      provider: provider(COMPLETE),
+      binding: gameBinding(),
+      term: 'x',
+      fetchImpl: comFrase,
+    })
+
+    expect(outcome).toMatchObject({
+      reason: 'provider-refused',
+      detail: 'Ensure you are sending Authorization and Client-ID as headers',
+    })
+  })
+
+  it('a frase do provedor NÃO chega quando ele está fora do ar', async () => {
+    /**
+     * No `provider-down` o corpo é quase sempre página de erro de proxy, e
+     * mostrá-la gastaria a tela pra dizer "está fora do ar" com mais palavras.
+     * O corpo nem chega a ser lido.
+     */
+    const fora: typeof fetch = async (url) =>
+      String(url).includes('id.twitch.tv')
+        ? new Response(
+            JSON.stringify({ access_token: 'tok-abc', expires_in: 5_327_537 }),
+            { status: 200 },
+          )
+        : new Response(JSON.stringify({ message: 'gateway timeout' }), {
+            status: 504,
+          })
+
+    const outcome = await searchProvider({
+      provider: provider(COMPLETE),
+      binding: gameBinding(),
+      term: 'x',
+      fetchImpl: fora,
+    })
+
+    expect(outcome).toEqual({
+      ok: false,
+      reason: 'provider-down',
+      provider: 'igdb',
+      status: 504,
     })
   })
 
