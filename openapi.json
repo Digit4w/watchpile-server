@@ -7334,9 +7334,13 @@
                         "provider-down",
                         "unreachable"
                       ]
+                    },
+                    "providerMessage": {
+                      "type": "string",
+                      "nullable": true
                     }
                   },
-                  "required": ["message", "reason"]
+                  "required": ["message", "reason", "providerMessage"]
                 }
               }
             }

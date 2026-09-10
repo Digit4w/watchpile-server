@@ -99,6 +99,21 @@ const SearchUnavailableSchema = z.object({
     'provider-down',
     'unreachable',
   ]),
+  /**
+   * A frase que o PROVEDOR escreveu, quando ele escreveu uma — 10/09/2026,
+   * decisão do dono.
+   *
+   * **Ela é do provedor e a tela precisa dizer isso** — *a frase que EXPLICA um
+   * resultado é da fonte que o produziu* (design system, seção 8, décima quarta
+   * leva). Por isso viaja num campo próprio em vez de entrar no `message`:
+   * concatenada, ela viraria copy nossa, e a nossa copy passa pelo catálogo
+   * enquanto esta **vem em inglês e não passa**.
+   *
+   * **Nula é o caso comum**, e não é lacuna: só o `provider-refused` a carrega,
+   * e mesmo ali só quando o provedor de fato escreveu algo legível. Nula, a tela
+   * é exatamente a de antes.
+   */
+  providerMessage: z.string().nullable(),
 })
 
 const SearchQuerySchema = z.object({
