@@ -11,7 +11,7 @@ the spirit of Yamtrack, Trakt and Suwayomi. One server, many clients: this
 repository exposes a documented HTTP API (`openapi.json`) and, by default, also
 serves the official web client.
 
-> **Current state: `v0.1.0`, the first public test release.** There is a
+> **Current state: `v0.2.0`, a public test release.** There is a
 > published image and there are ready-made installers — the sections below lead
 > with those, and building from source stays documented right after.
 >
@@ -25,8 +25,11 @@ serves the official web client.
 >
 > Two things you will meet before any feature: **nothing is signed** (Windows
 > warns that the publisher is unknown; macOS only opens it with right-click →
-> Open) and **there are no automatic updates** — learning that a new version
-> shipped, and downloading it, is on you.
+> Open) and **nothing updates itself** — Watchpile now checks GitHub for a
+> newer release and tells you in the bell, and the desktop app downloads and
+> applies it for you, but no upgrade happens without you asking. On Docker the
+> upgrade stays a `docker compose pull && up -d`, which the app shows you. The
+> check is on by default and turns off in `Settings → Updates`.
 
 ## Ways to run Watchpile
 
@@ -40,14 +43,14 @@ database container — SQLite is a file in the volume.
 
 ```bash
 docker run -d --name watchpile -p 3210:3210 -v ./data:/data \
-  ghcr.io/digit4w/watchpile:0.1.0
+  ghcr.io/digit4w/watchpile:0.2.0
 ```
 
 Or grab just the `compose.yaml` from this repository and swap `build: .` for
-`image: ghcr.io/digit4w/watchpile:0.1.0`. **You don't need to clone anything** —
+`image: ghcr.io/digit4w/watchpile:0.2.0`. **You don't need to clone anything** —
 the image already ships the web client inside.
 
-**Two tags, and the choice is about upgrading:** `:0.1.0` is what you pin in a
+**Two tags, and the choice is about upgrading:** `:0.2.0` is what you pin in a
 `compose.yaml` that must not change on its own; `:latest` follows along. While
 the project is in `0.x`, `:latest` may bring a breaking change — see the warning
 above.

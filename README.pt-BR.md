@@ -11,7 +11,7 @@ espírito de Yamtrack, Trakt e Suwayomi. Um servidor, múltiplos clientes: este
 repositório expõe uma API HTTP documentada (`openapi.json`) e, por padrão,
 também serve o cliente web oficial.
 
-> **Estado atual: `v0.1.0`, a primeira versão pública de teste.** Há imagem
+> **Estado atual: `v0.2.0`, uma versão pública de teste.** Há imagem
 > publicada e instaladores prontos — as seções abaixo abrem por eles, e o build
 > a partir do código-fonte continua documentado logo em seguida.
 >
@@ -24,8 +24,12 @@ também serve o cliente web oficial.
 >
 > Duas coisas que você vai encontrar antes de qualquer feature: **nada é
 > assinado** (o Windows avisa que o publicador é desconhecido; o macOS só abre
-> com botão direito → Abrir) e **não há atualização automática** — saber que
-> saiu versão nova e baixar é manual.
+> com botão direito → Abrir) e **nada se atualiza sozinho** — o Watchpile agora
+> confere se saiu release nova e avisa no sino, e o aplicativo de desktop baixa
+> e aplica pra você, mas nenhuma atualização acontece sem você pedir. No Docker
+> atualizar continua sendo `docker compose pull && up -d`, e o próprio app
+> mostra o comando. A checagem vem ligada e se desliga em
+> `Settings → Updates`.
 
 ## Formas de usar o Watchpile
 
@@ -39,14 +43,14 @@ separado — o SQLite é um arquivo no volume.
 
 ```bash
 docker run -d --name watchpile -p 3210:3210 -v ./data:/data \
-  ghcr.io/digit4w/watchpile:0.1.0
+  ghcr.io/digit4w/watchpile:0.2.0
 ```
 
 Ou baixe só o `compose.yaml` deste repositório e troque `build: .` por
-`image: ghcr.io/digit4w/watchpile:0.1.0`. **Não precisa clonar nada** — a
+`image: ghcr.io/digit4w/watchpile:0.2.0`. **Não precisa clonar nada** — a
 imagem já traz o cliente web embutido.
 
-**Duas tags, e a escolha é sobre atualizar:** `:0.1.0` é o que se fixa num
+**Duas tags, e a escolha é sobre atualizar:** `:0.2.0` é o que se fixa num
 `compose.yaml` que não pode mudar sozinho; `:latest` acompanha. Enquanto o
 projeto estiver em `0.x`, `:latest` pode trazer mudança que quebra — ver o
 aviso lá em cima.
