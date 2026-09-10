@@ -106,10 +106,14 @@ export const MEDIA_TYPE_TEMPLATES: readonly MediaTypeTemplate[] = [
   {
     slug: 'book',
     icon: 'book-open',
-    countsProgress: true,
+    // Livro comum se acompanha por STATUS, como filme — 10/09/2026, decisão do
+    // dono, e a `0048` leva o estado semeado junto. A unidade sai com o
+    // contador: `Pages` ao lado de um tipo que não conta é um par que a tela
+    // não sabe explicar. Quem ligar o contador de volta digita a unidade.
+    countsProgress: false,
     names: {
-      en: { name: 'Book', plural: 'Books', progressUnit: 'Pages' },
-      'pt-BR': { name: 'Livro', plural: 'Livros', progressUnit: 'Páginas' },
+      en: { name: 'Book', plural: 'Books', progressUnit: null },
+      'pt-BR': { name: 'Livro', plural: 'Livros', progressUnit: null },
     },
   },
 ]

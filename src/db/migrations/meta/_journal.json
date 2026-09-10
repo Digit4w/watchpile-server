@@ -337,6 +337,13 @@
       "when": 1789019307551,
       "tag": "0047_mal_fields_union",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "6",
+      "when": 1789105707551,
+      "tag": "0048_book_not_counted",
+      "breakpoints": true
     }
   ]
 }
