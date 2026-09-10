@@ -54,6 +54,22 @@ export const NOTIFICATION_KINDS = [
    * fazer —, mas nada quebrou na instalação.
    */
   'import-failed',
+  /**
+   * Há uma versão mais nova publicada (brief, 3.9).
+   * `params`: `{ version, url }`.
+   *
+   * **`info` e não `warning`**: nada está quebrado, e o barulho do sinal
+   * acompanha o tamanho do fato — pintar de âmbar uma instalação que está
+   * funcionando é a régua do sinal virada contra si mesma. É o segundo uso do
+   * degrau neutro, depois de `import-finished`.
+   *
+   * **A `dedupeKey` carrega a VERSÃO**, e é isso que faz o aviso nascer uma vez
+   * por versão em vez de uma por boot: dispensar `0.2.0` continua dispensado
+   * depois de um `docker restart`, e `0.3.0` chega como aviso novo. E é o que
+   * faz a condição se dispensar sozinha ao atualizar — a versão que a
+   * instalação agora tem deixa de estar entre as verdadeiras.
+   */
+  'update-available',
 ] as const
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number]

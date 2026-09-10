@@ -3,6 +3,7 @@ import { db } from '../../db/client.js'
 import { mediaTypeProviders } from '../../db/schema/media-type-providers.js'
 import { providers } from '../../db/schema/providers.js'
 import { resolveCredential } from '../providers/providers.credentials.js'
+import { checkIfStale, updateState } from '../updates/updates.store.js'
 import { dedupeKey, type NotificationKind } from './notifications.kinds.js'
 import * as store from './notifications.store.js'
 
@@ -37,6 +38,16 @@ import * as store from './notifications.store.js'
 
 /** O prefixo cobre os dois `kind` de propósito — ver `reconcile` abaixo. */
 const PREFIX = 'instance:provider-'
+
+/**
+ * A atualização tem prefixo PRÓPRIO, e isso não é arrumação.
+ *
+ * `dismissResolved` dispensa tudo que casa o prefixo e não está entre as
+ * condições verdadeiras. Com um prefixo só, o reconcile de provedores
+ * dispensaria o aviso de versão nova — e vice-versa — porque cada metade só
+ * conhece as suas condições. **Dois assuntos, duas varreduras.**
+ */
+const UPDATE_PREFIX = 'instance:update-'
 
 type Condition = {
   kind: NotificationKind
@@ -133,6 +144,48 @@ function readProviders() {
  * aviso novo já lá, não um instante sem nada.
  */
 export function reconcileInstanceConditions(): void {
+  reconcileProviders()
+  reconcileUpdate()
+}
+
+/**
+ * A versão nova, derivada de ESTADO e sem tocar na rede.
+ *
+ * Quem consulta o GitHub é `checkIfStale`, que dispara e **não é esperado**:
+ * isto aqui roda em toda leitura de admin, e uma condição que dependesse de
+ * `fetch` faria o sino — que é chrome — esperar a internet pra abrir.
+ *
+ * **O sujeito da chave é a VERSÃO**, não uma constante. É o que faz o aviso
+ * nascer uma vez por versão e se dispensar sozinho ao atualizar: depois do
+ * upgrade a condição some, porque a instalada deixou de ser mais velha.
+ */
+function reconcileUpdate(): void {
+  checkIfStale()
+
+  const state = updateState()
+  const open = new Set(store.openKeys(UPDATE_PREFIX))
+
+  const keys: string[] = []
+  if (state.enabled && state.updateAvailable && state.latest) {
+    const key = dedupeKey('instance', 'update-available', state.latest)
+    keys.push(key)
+
+    if (!open.has(key)) {
+      store.emit({
+        audience: 'instance',
+        /** Nada está quebrado: o degrau neutro, como `import-finished`. */
+        severity: 'info',
+        kind: 'update-available',
+        params: { version: state.latest, url: state.latestUrl ?? '' },
+        dedupeKey: key,
+      })
+    }
+  }
+
+  store.dismissResolved(UPDATE_PREFIX, keys)
+}
+
+function reconcileProviders(): void {
   const conditions = conditionsOf(readProviders())
   const already = new Set(store.openKeys(PREFIX))
 
