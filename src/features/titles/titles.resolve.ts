@@ -132,6 +132,8 @@ export async function resolveTitle({
         votes: stored.votes,
         ownedEntryId: owned,
         unitGroups: [],
+        /** Sem grupos não há coletivo a nomear. */
+        unitGroupLabel: null,
         /**
          * **Falso mesmo quando o par declara unidades.** A lista viria do
          * provedor que acabou de não responder, e oferecer a faixa faria a tela
@@ -264,6 +266,12 @@ export async function resolveTitle({
       links: fields.links,
       ownedEntryId: owned,
       unitGroups,
+      /**
+       * Do PAR, e nulo quando ele não declara — a tela não inventa o coletivo.
+       * Só faz sentido junto de grupos: sem eles não há conjunto a nomear.
+       */
+      unitGroupLabel:
+        unitGroups.length > 0 ? (map.unitGroups?.label ?? null) : null,
       hasUnits,
       /** Nulo é a resposta do provedor de agora. Ver `titles.public.ts`. */
       snapshot: null,

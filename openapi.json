@@ -3119,6 +3119,10 @@
                         "required": ["number", "name", "count", "art"]
                       }
                     },
+                    "unitGroupLabel": {
+                      "type": "string",
+                      "nullable": true
+                    },
                     "hasUnits": {
                       "type": "boolean"
                     },
@@ -3158,6 +3162,7 @@
                     "links",
                     "ownedEntryId",
                     "unitGroups",
+                    "unitGroupLabel",
                     "hasUnits",
                     "snapshot"
                   ]
@@ -7553,6 +7558,10 @@
                         "required": ["number", "name", "count", "art"]
                       }
                     },
+                    "unitGroupLabel": {
+                      "type": "string",
+                      "nullable": true
+                    },
                     "hasUnits": {
                       "type": "boolean"
                     },
@@ -7592,6 +7601,7 @@
                     "links",
                     "ownedEntryId",
                     "unitGroups",
+                    "unitGroupLabel",
                     "hasUnits",
                     "snapshot"
                   ]

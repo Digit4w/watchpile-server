@@ -514,6 +514,37 @@ export type FieldMap = {
     count?: FieldPath
     /** A arte do grupo — o pôster da temporada, a capa do volume. */
     art?: FieldPath
+    /**
+     * Como o CONJUNTO de grupos se chama, no plural — 10/09/2026.
+     *
+     * ── Por que ele é declarado, e não escrito na tela ────────────────────
+     * O `name` acima já dizia que **o produto nunca decide como o agrupamento
+     * se chama** — é o provedor que escreve "Season 1". A tela contradizia
+     * isso: o título da seção era `'Seasons'` em código, para todo tipo de
+     * mídia. Hoje ninguém vê o defeito porque **só o par `(tv, tmdb)` mapeia
+     * `unitGroups`**, medido — mas no dia em que um par de mangá agrupar, o
+     * cabeçalho diria "Seasons" sobre uma lista de volumes.
+     *
+     * ── Por que no PAR e não no tipo ─────────────────────────────────────
+     * Seria plausível pô-lo em `media_types` ao lado de `progress_unit`:
+     * "mangá conta capítulos e agrupa em volumes" parece propriedade do meio.
+     * Só que **não é** — um provedor pode agrupar mangá por ARCO, e o rótulo
+     * do tipo mentiria sobre ele. Quem sabe como aquela resposta está
+     * organizada é o par que a lê, e é ele que já declara `path`, `number` e
+     * `name`. Quinta propriedade a fazer o caminho *o que pertence ao par se
+     * declara*.
+     *
+     * ── Ausente é legítimo ───────────────────────────────────────────────
+     * Sem ele a tela **não inventa** um coletivo: a lista mostra os nomes que
+     * o provedor deu, e eles já se explicam. É o mesmo espírito de
+     * `attribution` nulo — a ausência é uma afirmação, não uma lacuna.
+     *
+     * **É a única string de UI que vive na definição de um provedor**, e isso
+     * é peso: ela não passa pelo catálogo de i18n, como `attribution` também
+     * não passa. A diferença é que `attribution` é do provedor por licença, e
+     * esta é copy — fica registrado como custo assumido, não como descuido.
+     */
+    label?: string
   }
 }
 
