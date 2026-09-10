@@ -22,5 +22,7 @@ router
   .openapi(routes.getUpdates, handlers.getUpdates)
   .openapi(routes.setCheck, handlers.setCheck)
   .openapi(routes.checkNow, handlers.checkNow)
+  .openapi(routes.download, handlers.download)
+  .openapi(routes.install, handlers.install)
 
 export default router

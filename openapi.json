@@ -550,6 +550,16 @@
           },
           "updateAvailable": {
             "type": "boolean"
+          },
+          "canInstall": {
+            "type": "boolean"
+          },
+          "installHint": {
+            "type": "string",
+            "nullable": true
+          },
+          "download": {
+            "$ref": "#/components/schemas/UpdateDownload"
           }
         },
         "required": [
@@ -558,8 +568,38 @@
           "latest",
           "latestUrl",
           "checkedAt",
-          "updateAvailable"
+          "updateAvailable",
+          "canInstall",
+          "installHint",
+          "download"
         ]
+      },
+      "UpdateDownload": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": ["idle", "downloading", "ready", "failed"]
+          },
+          "version": {
+            "type": "string",
+            "nullable": true
+          },
+          "received": {
+            "type": "integer",
+            "nullable": true
+          },
+          "total": {
+            "type": "integer",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true,
+            "enum": ["no-asset", "no-release", "failed", null]
+          }
+        },
+        "required": ["state", "version", "received", "total", "reason"]
       }
     },
     "parameters": {}
@@ -8362,6 +8402,142 @@
           },
           "409": {
             "description": "Update checking is turned off on this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/updates/download": {
+      "post": {
+        "tags": ["Updates"],
+        "responses": {
+          "202": {
+            "description": "The download started, or was already running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateState"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "This is for the admin of this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "There is nothing to download, or this install cannot apply one",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/updates/install": {
+      "post": {
+        "tags": ["Updates"],
+        "responses": {
+          "202": {
+            "description": "The installer was handed to the system",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "This is for the admin of this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Nothing has been downloaded, or this install cannot apply one",
             "content": {
               "application/json": {
                 "schema": {
