@@ -21,8 +21,14 @@ function dublê(rota: Rota): typeof fetch {
 }
 
 /** A forma medida de uma linha de `animelist`. */
-const linhaAnime = (id: number, title: string, over = {}) => ({
-  node: { id, title, main_picture: { medium: 'm', large: 'l' } },
+const linhaAnime = (id: number, title: string, over = {}, nó = {}) => ({
+  node: {
+    id,
+    title,
+    main_picture: { medium: 'm', large: 'l' },
+    num_episodes: 26,
+    ...nó,
+  },
   list_status: {
     status: 'completed',
     score: 7,
@@ -34,8 +40,14 @@ const linhaAnime = (id: number, title: string, over = {}) => ({
 })
 
 /** A de `mangalist` — e ela é DIFERENTE, que é o ponto de metade destes testes. */
-const linhaManga = (id: number, title: string, over = {}) => ({
-  node: { id, title, main_picture: { medium: 'm', large: 'l' } },
+const linhaManga = (id: number, title: string, over = {}, nó = {}) => ({
+  node: {
+    id,
+    title,
+    main_picture: { medium: 'm', large: 'l' },
+    num_chapters: 162,
+    ...nó,
+  },
   list_status: {
     status: 'reading',
     score: 0,
@@ -174,17 +186,66 @@ describe('a identidade', () => {
     expect(items[0]?.title).toBe('A')
   })
 
-  it('não traz o total da obra, e é decisão', async () => {
-    // A lista devolve o progresso de quem acompanha, não o tamanho da obra.
-    // Pedir `node{num_episodes}` custaria o campo em toda página por um dado
-    // que a tela de detalhe busca quando precisa.
+  it('lê o total no campo do TIPO, como o progresso', async () => {
+    // Medido em 09/09/2026: `num_episodes` chega em `node` na lista de anime e
+    // `num_chapters` na de mangá. Ler o de anime numa lista de mangá devolveria
+    // nulo para todas, sem erro nenhum — o mesmo defeito que o progresso já
+    // tinha antes de separar os dois campos.
     const { items } = await malSource(
       'f',
       'k',
-      listas([linhaAnime(1, 'A')]),
+      listas([linhaAnime(1, 'A')], [linhaManga(2, 'B')]),
+    ).read()
+
+    expect(items.find((i) => i.title === 'A')?.total).toBe(26)
+    expect(items.find((i) => i.title === 'B')?.total).toBe(162)
+  })
+
+  it('lê ZERO como desconhecido, não como zero', async () => {
+    // Obra com zero episódios não existe. Medido: One Piece em exibição devolve
+    // `num_episodes: 0` e Berserk em publicação devolve `num_chapters: 0` —
+    // então zero é o `12 / ?` da 3.11, e gravá-lo daria `380 / 0` na tela.
+    const { items } = await malSource(
+      'f',
+      'k',
+      listas(
+        [linhaAnime(1, 'A', {}, { num_episodes: 0 })],
+        [linhaManga(2, 'B', {}, { num_chapters: 0 })],
+      ),
+    ).read()
+
+    expect(items.find((i) => i.title === 'A')?.total).toBeNull()
+    expect(items.find((i) => i.title === 'B')?.total).toBeNull()
+  })
+
+  it('lê AUSENTE como desconhecido', async () => {
+    // Campo que não veio e campo em zero têm a mesma resposta, e é a única
+    // resposta segura: chutar um total é pior que não ter um.
+    const { items } = await malSource(
+      'f',
+      'k',
+      listas([linhaAnime(1, 'A', {}, { num_episodes: undefined })]),
     ).read()
 
     expect(items[0]?.total).toBeNull()
+  })
+
+  it('pede o campo do total no `fields`, e ele muda com o tipo', async () => {
+    // O `fields` é query string, não requisição a mais — e o `paging.next` que
+    // o MAL devolve já o traz de volta inteiro, então a segunda página não
+    // perde o campo (medido).
+    const pedidas: string[] = []
+    await malSource('f', 'k', (async (url: string | URL | Request) => {
+      pedidas.push(String(url))
+      return new Response(JSON.stringify(vazio), { status: 200 })
+    }) as typeof fetch).read()
+
+    expect(pedidas.find((u) => u.includes('/animelist'))).toContain(
+      'fields=list_status,num_episodes',
+    )
+    expect(pedidas.find((u) => u.includes('/mangalist'))).toContain(
+      'fields=list_status,num_chapters',
+    )
   })
 })
 
