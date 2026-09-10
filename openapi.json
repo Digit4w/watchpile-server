@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Watchpile API",
-    "version": "0.0.0"
+    "version": "0.1.0"
   },
   "components": {
     "schemas": {
@@ -5706,6 +5706,359 @@
           },
           "409": {
             "description": "Titles still use this type, so it cannot be deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "entryCount": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": ["message", "entryCount"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/media-types/{slug}/providers/{provider}": {
+      "put": {
+        "tags": ["Media types"],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "slug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "provider",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "copyFrom": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["copyFrom"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The provider now serves this media type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "slug": {
+                      "type": "string"
+                    },
+                    "icon": {
+                      "type": "string"
+                    },
+                    "countsProgress": {
+                      "type": "boolean"
+                    },
+                    "entryCount": {
+                      "type": "integer"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "plural": {
+                      "type": "string"
+                    },
+                    "progressUnit": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "providers": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "effectiveProvider": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "names": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "plural": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "progressUnit": {
+                            "type": "string",
+                            "nullable": true
+                          }
+                        },
+                        "required": ["name", "plural"]
+                      }
+                    }
+                  },
+                  "required": [
+                    "slug",
+                    "icon",
+                    "countsProgress",
+                    "entryCount",
+                    "name",
+                    "plural",
+                    "progressUnit",
+                    "providers",
+                    "effectiveProvider",
+                    "names"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "There is no recipe to copy from",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an admin sets the vocabulary of this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Media type or provider not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Media types"],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "slug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "provider",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The provider no longer serves this media type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "slug": {
+                      "type": "string"
+                    },
+                    "icon": {
+                      "type": "string"
+                    },
+                    "countsProgress": {
+                      "type": "boolean"
+                    },
+                    "entryCount": {
+                      "type": "integer"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "plural": {
+                      "type": "string"
+                    },
+                    "progressUnit": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "providers": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "effectiveProvider": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "names": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "plural": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "progressUnit": {
+                            "type": "string",
+                            "nullable": true
+                          }
+                        },
+                        "required": ["name", "plural"]
+                      }
+                    }
+                  },
+                  "required": [
+                    "slug",
+                    "icon",
+                    "countsProgress",
+                    "entryCount",
+                    "name",
+                    "plural",
+                    "progressUnit",
+                    "providers",
+                    "effectiveProvider",
+                    "names"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an admin sets the vocabulary of this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "That provider does not serve this media type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Titles of this type already point at this provider",
             "content": {
               "application/json": {
                 "schema": {

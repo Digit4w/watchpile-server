@@ -30,6 +30,16 @@ router.use('/', async (c, next) => {
   return adminMiddleware()(c, next)
 })
 router.use('/:slug', adminMiddleware())
+/**
+ * **A linha acima NÃO cobre `/:slug/providers/:provider`** — 10/09/2026.
+ *
+ * `use('/:slug')` casa um segmento e para ali; sub-caminho é outro padrão. Sem
+ * esta segunda linha, vincular e desvincular provedor ficariam abertos a
+ * qualquer sessão, e a guarda pareceria estar cobrindo o que não cobre. É a
+ * mesma forma do `htmlFor` apontando pra id inexistente: escrito, plausível, e
+ * sem efeito.
+ */
+router.use('/:slug/*', adminMiddleware())
 
 router
   .openapi(routes.list, handlers.list)
@@ -37,5 +47,7 @@ router
   .openapi(routes.create, handlers.create)
   .openapi(routes.update, handlers.update)
   .openapi(routes.remove, handlers.remove)
+  .openapi(routes.link, handlers.link)
+  .openapi(routes.unlink, handlers.unlink)
 
 export default router
