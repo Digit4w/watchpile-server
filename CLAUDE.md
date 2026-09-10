@@ -390,6 +390,101 @@ Quatro coisas que valem ao mexer nisto:
   dado do usuário. **`1` e `null` são opostos** — num não há o que contar, no
   outro há e não se sabe quanto
 
+**A fonte da BUSCA tem um degrau de usuário — 10/09/2026** (brief, 3.9 e 3.10).
+`preferred_search_sources` (`0051`), uma linha por (usuário, tipo), no molde de
+`hidden_media_types`. **Não é `media_types.default_provider_slug`**, e a
+diferença é a régua de 30/08: aquela coluna diz *quem responde a busca neste
+servidor* e é do admin, guardada por `adminMiddleware`; esta diz *com que fonte
+EU busco*. Escrever a primeira a partir de `/search` faria um não-admin trocar o
+padrão de todo mundo — invisível hoje, porque nenhuma rota cria um segundo
+usuário, e verdadeiro no dia em que uma criar.
+
+- **`chooseSearchProvider` tem QUATRO degraus**, e o novo entra entre o pedido
+  explícito e o efetivo. A precedência inteira mora aqui: a tela lê o mapa só
+  pra desenhar o valor atual do seletor, e o `?provider=` continua sendo *desta
+  vez, outra fonte*
+- **A leitura VALIDA contra a junção.** A FK cobre o tipo e o provedor sumirem,
+  **não o par entre eles cair** — que é o gesto normal de desassociar. Sem a
+  validação, a busca recusaria com `not-associated` por causa de uma escolha
+  antiga que ninguém tem como ver nem desfazer. A linha órfã **fica no banco**:
+  reassociar o par a torna válida de novo
+- **A escrita é de UM tipo**, ao contrário da de visibilidade — *substituir o
+  conjunto inteiro exige mostrar o conjunto inteiro*, e `/search` mostra um tipo
+  por vez. `provider: null` desfaz a escolha, porque não ter preferência já tem
+  representação: a linha não existir
+- **O spec de `chooseSearchProvider` não foi checado pelo compilador.**
+  `tsconfig.json` exclui `*.spec.ts`, então nove chamadas ficaram sem o campo
+  novo e a suíte passou — `undefined` é falso. Mesma forma dos seis `insert` de
+  teste de 07/09: **a rede que pega uma mudança de assinatura não é
+  necessariamente o compilador**
+
+## Atualizar pelo próprio aplicativo — 10/09/2026
+
+`src/features/updates/`, mais `GET /api/meta` em `src/routes/` e
+`electron/updater.ts`. Do **admin, caminho inteiro**; a versão que todo mundo lê
+sai em `/api/meta`, porque `About` fica fora dos dois grupos de Settings.
+
+| Peça | Onde |
+| --- | --- |
+| A versão deste build | `src/lib/version.ts` + `src/routes/meta.*` |
+| O comparador, puro | `updates.compare.ts` + `.spec.ts` |
+| A leitura do feed do GitHub | `updates.feed.ts` |
+| Qual asset serve esta máquina, puro | `updates.asset.ts` + `.spec.ts` |
+| O estado guardado e a cadência | `updates.store.ts` + `0052_update_check.sql` |
+| O download com progresso | `updates.download.ts` |
+| O ponto de registro da capacidade | `updates.installer.ts` |
+| O que cada plataforma faz com o arquivo | `electron/updater.ts` |
+
+**Nove invariantes:**
+
+- **A versão é lida SUBINDO até achar um `package.json`.** A profundidade muda
+  entre `src/lib/` (dev), `dist/lib/` (Docker) e `dist-electron/src/lib/`
+  (Electron): um `../..` fixo acerta dois e erra o terceiro **calado**, porque a
+  leitura falha e a versão vira nula numa tela que ninguém abre em CI. E **não é
+  valor gerado no build** — `providers.embedded.ts` é o precedente disso e
+  guarda SEGREDO, que não pode estar no repositório; versão pode, e o CI já lê
+  este mesmo arquivo pra nomear a imagem
+- **`/api/meta` é separada de `/health`**, que o Docker chama sem sessão:
+  pendurar a versão lá a publicaria antes do login
+- **`/releases/latest` NÃO serve, e isso foi medido.** Ele exclui pre-release e
+  responde **404** neste produto. Pre-release **conta** enquanto for o que
+  publicamos; um interruptor pra ligá-las seria vocabulário que nada exercita
+- **A mais nova é por VERSÃO, não pela ordem da lista.** A API ordena por data
+  de criação, e o CI **reaproveita uma release existente** quando a `main` é
+  repromovida sem subir a versão
+- **O comparador é nosso**, porque o formato que emitimos é `x.y.z` e nada mais
+  (seção 8). **O que não casa responde "não é mais nova"**: o outro lado é
+  string de terceiro, e afirmar atualização errado manda a pessoa reinstalar o
+  que já tem
+- **A condição de notificação é derivada de ESTADO, sem rede.** Ela roda em toda
+  leitura de admin do sino; quem consulta o GitHub dispara dali e **não é
+  esperado**, senão o sino dependeria da internet pra abrir. O sujeito da chave
+  de dedupe é a **versão**, e é isso que faz o aviso nascer uma vez por versão e
+  **se dispensar sozinho ao atualizar**. Ele tem **prefixo próprio**, porque
+  `dismissResolved` varre por prefixo e dividir um com os provedores faria cada
+  metade dispensar os avisos da outra
+- **`updateCheckedAt` é carimbado mesmo quando a consulta FALHA.** Sem isso uma
+  instalação sem rede tentaria a cada leitura, que é o oposto da cadência.
+  **Desligar a checagem esquece o que já foi visto**, senão a tela seguiria
+  afirmando uma versão nova a partir de uma pergunta recusada
+- **A capacidade de instalar é REGISTRADA, e é uma função.** O cliente não pode
+  detectar o ambiente e o servidor não pode importar o Electron (3.4, os dois
+  lados), então o wrapper registra antes de `startServer()`. **No Docker ninguém
+  registra**, e as rotas de baixar e instalar respondem 409 — a tela mostra o
+  comando. **A frase de como termina viaja junto**, porque as três plataformas
+  terminam diferente
+- **Asset sem etiqueta de arquitetura é o build x64**, porque a matriz é
+  `macos-latest` (arm64), `ubuntu-latest` e `windows-latest` (x64). Fora do x64
+  só serve o que declara a arquitetura, e **Mac Intel e Linux ARM não têm asset
+  hoje** — a rota responde `no-asset` em vez de entregar binário que não roda
+
+**O estado do download vive em MEMÓRIA, e o arquivo também.** Ele fica no
+diretório temporário do sistema, então os dois morrem juntos no próximo boot —
+gravar um `ready` apontando pra um caminho que não existe mais seria promessa que
+se quebra sozinha. **`POST /api/updates/install` responde 202 antes de aplicar**,
+porque `apply` termina o processo: esperar penduraria a requisição até a conexão
+cair, e a tela leria isso como falha do que deu certo.
+
 **Apagar tipo em uso recusa com a contagem.** O admin pode tentar apagar um tipo
 que obras de OUTRO usuário usam; a resposta é recusa com quantas obras o usam, e
 não cascade. Migrar as obras para outro tipo antes de apagar **fica como
