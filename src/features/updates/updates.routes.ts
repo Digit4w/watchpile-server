@@ -12,6 +12,27 @@ const MessageSchema = z.object({
   message: z.string(),
 })
 
+/**
+ * O progresso é BARRA nesta tela, e é exceção registrada (10/09/2026, decisão
+ * do dono): a regra de 06/09 diz *número, nunca barra*, e o teste dela é *"o
+ * denominador é conhecido E o numerador anda de um em um?"* — num download o
+ * denominador é conhecido e o numerador anda aos milhares.
+ *
+ * O servidor manda os dois NÚMEROS e a tela desenha: `total` nulo (servidor sem
+ * `Content-Length`) é o caso em que ela cai numa barra indeterminada em vez de
+ * mentir uma fração.
+ */
+const DownloadSchema = z
+  .object({
+    state: z.enum(['idle', 'downloading', 'ready', 'failed']),
+    version: z.string().nullable(),
+    received: z.number().int().nullable(),
+    total: z.number().int().nullable(),
+    /** `kind`, nunca frase: quem escreve a copy é a tela. */
+    reason: z.enum(['no-asset', 'no-release', 'failed']).nullable(),
+  })
+  .openapi('UpdateDownload')
+
 const UpdateStateSchema = z
   .object({
     current: z.string().nullable(),
@@ -32,6 +53,24 @@ const UpdateStateSchema = z
      * uma fica pra trás.
      */
     updateAvailable: z.boolean(),
+    /**
+     * Se ESTA instalação sabe aplicar uma atualização sozinha.
+     *
+     * **Quem responde é o servidor, e não a tela**, porque o cliente é
+     * agnóstico de host (brief, 3.4): ele não pode perguntar se está no
+     * Electron. Falso é o Docker, onde atualizar é `compose pull` — que
+     * acontece fora do processo, e por isso a tela mostra o comando em vez de
+     * um botão que finge.
+     */
+    canInstall: z.boolean(),
+    /**
+     * Como a atualização TERMINA nesta plataforma, escrita por quem registrou
+     * a capacidade — no Windows o instalador substitui e o app fecha, no macOS
+     * o `.dmg` abre e a última etapa é arrastar. Nula quando não há como
+     * instalar daqui.
+     */
+    installHint: z.string().nullable(),
+    download: DownloadSchema,
   })
   .openapi('UpdateState')
 
@@ -120,3 +159,67 @@ export const checkNow = createRoute({
 export type GetUpdatesRoute = typeof getUpdates
 export type SetCheckRoute = typeof setCheck
 export type CheckNowRoute = typeof checkNow
+
+/**
+ * Baixa o instalador da versão nova. **Responde na hora e não espera** — a
+ * tela acompanha lendo o estado, como no import.
+ */
+export const download = createRoute({
+  method: 'post',
+  path: '/download',
+  tags: ['Updates'],
+  responses: {
+    202: {
+      content: { 'application/json': { schema: UpdateStateSchema } },
+      description: 'The download started, or was already running',
+    },
+    401: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'No active session',
+    },
+    403: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'This is for the admin of this server',
+    },
+    409: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description:
+        'There is nothing to download, or this install cannot apply one',
+    },
+  },
+})
+
+/**
+ * Entrega o arquivo baixado ao sistema.
+ *
+ * **Ela normalmente não devolve nada**, porque o processo termina: o
+ * instalador precisa substituir o que está rodando. A resposta é 202 e não
+ * 200 — o servidor aceitou e o resultado acontece fora dele.
+ */
+export const install = createRoute({
+  method: 'post',
+  path: '/install',
+  tags: ['Updates'],
+  responses: {
+    202: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'The installer was handed to the system',
+    },
+    401: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'No active session',
+    },
+    403: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'This is for the admin of this server',
+    },
+    409: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description:
+        'Nothing has been downloaded, or this install cannot apply one',
+    },
+  },
+})
+
+export type DownloadRoute = typeof download
+export type InstallRoute = typeof install

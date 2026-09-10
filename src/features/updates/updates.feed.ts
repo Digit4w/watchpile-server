@@ -1,4 +1,5 @@
 import { env } from '../../env.js'
+import type { Asset } from './updates.asset.js'
 
 /**
  * A release mais nova publicada, lida da API do GitHub.
@@ -31,6 +32,11 @@ import { env } from '../../env.js'
 export type Release = {
   version: string
   url: string
+  /**
+   * Os arquivos publicados naquela release. Quem escolhe qual serve esta
+   * máquina é `assetFor`, que é regra pura — aqui só se lê o que veio.
+   */
+  assets: Asset[]
 }
 
 export type FeedResult =
@@ -92,9 +98,27 @@ function toRelease(item: unknown): Release[] {
     tag_name: tag,
     html_url: url,
     draft,
+    assets,
   } = item as Record<string, unknown>
   if (draft === true || typeof tag !== 'string' || typeof url !== 'string') {
     return []
   }
-  return [{ version: tag, url }]
+  return [
+    {
+      version: tag,
+      url,
+      assets: Array.isArray(assets) ? assets.flatMap(toAsset) : [],
+    },
+  ]
+}
+
+function toAsset(item: unknown): Asset[] {
+  if (typeof item !== 'object' || item === null) {
+    return []
+  }
+  const { name, browser_download_url: url } = item as Record<string, unknown>
+  if (typeof name !== 'string' || typeof url !== 'string') {
+    return []
+  }
+  return [{ name, url }]
 }

@@ -163,6 +163,23 @@ app.whenReady().then(async () => {
     ? join(process.resourcesPath, 'client-dist')
     : join(import.meta.dirname, '../../client/dist')
 
+  /**
+   * **A capacidade de se atualizar é DECLARADA, como o controle de rede.**
+   *
+   * O servidor não pode saber que está no Electron e o cliente não pode
+   * perguntar (brief, 3.4, os dois lados), então quem sabe registra — e o
+   * registro acontece ANTES de `startServer()`, porque a primeira leitura da
+   * tela pode chegar no mesmo instante em que a janela abre.
+   *
+   * No Docker ninguém registra, e a rota responde que não há como daqui: lá
+   * atualizar é `docker compose pull`, que acontece fora do processo.
+   */
+  const { registerInstaller } = await import(
+    '../src/features/updates/updates.installer.js'
+  )
+  const { installerForThisPlatform } = await import('./updater.js')
+  registerInstaller(installerForThisPlatform())
+
   const { startServer } = await import('../src/index.js')
   // O host volta junto e é ignorado de propósito: a janela carrega `localhost`,
   // que alcança o servidor tanto no loopback quanto em todas as interfaces.

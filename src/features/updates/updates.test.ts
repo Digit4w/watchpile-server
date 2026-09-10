@@ -7,6 +7,8 @@ import { sessions } from '../../db/schema/sessions.js'
 import { settings } from '../../db/schema/settings.js'
 import { users } from '../../db/schema/users.js'
 import { hashPassword } from '../auth/auth.crypto.js'
+import { resetDownload } from './updates.download.js'
+import { registerInstaller } from './updates.installer.js'
 import { runCheck } from './updates.store.js'
 
 function cookieFrom(res: Response): string {
@@ -261,5 +263,71 @@ describe('the notification it raises', () => {
       .run()
 
     expect(await kinds(cookie)).not.toContain('update-available')
+  })
+})
+
+describe('downloading the installer', () => {
+  const download = (cookie: string) =>
+    app.request('/api/updates/download', {
+      method: 'POST',
+      headers: { cookie },
+    })
+
+  const install = (cookie: string) =>
+    app.request('/api/updates/install', { method: 'POST', headers: { cookie } })
+
+  beforeEach(async () => {
+    registerInstaller(null)
+    await resetDownload()
+  })
+
+  it('refuses when this install cannot apply an update', async () => {
+    // Docker: a container does not replace itself, and `compose pull` happens
+    // outside the process. Downloading hundreds of megabytes nobody can apply
+    // is worse than saying no.
+    const cookie = await signUpAdmin()
+    seenVersion('v9.9.9')
+
+    expect((await download(cookie)).status).toBe(409)
+  })
+
+  it('refuses when there is nothing newer', async () => {
+    const cookie = await signUpAdmin()
+    registerInstaller({ hint: 'x', apply: () => {} })
+    seenVersion('v0.0.1')
+
+    expect((await download(cookie)).status).toBe(409)
+  })
+
+  it('says whether this install can apply one, so the screen does not guess', async () => {
+    // The client cannot ask whether it is inside Electron (brief, 3.4), so
+    // the server answers — and the hint travels with the capability, because
+    // it ends differently on each platform.
+    const cookie = await signUpAdmin()
+
+    const before = (await (await get(cookie)).json()) as Record<string, unknown>
+    expect(before.canInstall).toBe(false)
+    expect(before.installHint).toBeNull()
+
+    registerInstaller({ hint: 'It will restart.', apply: () => {} })
+
+    const after = (await (await get(cookie)).json()) as Record<string, unknown>
+    expect(after.canInstall).toBe(true)
+    expect(after.installHint).toBe('It will restart.')
+  })
+
+  it('refuses to apply when nothing has been downloaded', async () => {
+    const cookie = await signUpAdmin()
+    registerInstaller({ hint: 'x', apply: () => {} })
+
+    expect((await install(cookie)).status).toBe(409)
+  })
+
+  it('is for the admin, on both paths', async () => {
+    await signUpAdmin()
+    const member = await signUpMember()
+
+    expect((await download(member)).status).toBe(403)
+    expect((await install(member)).status).toBe(403)
   })
 })
