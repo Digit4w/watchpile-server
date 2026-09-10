@@ -2,8 +2,13 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import app from '../../app.js'
 import { db } from '../../db/client.js'
 import { hiddenMediaTypes } from '../../db/schema/hidden-media-types.js'
+import { preferredSearchSources } from '../../db/schema/preferred-search-sources.js'
 import { sessions } from '../../db/schema/sessions.js'
 import { users } from '../../db/schema/users.js'
+import {
+  searchSourcesOf,
+  setSearchSource,
+} from './preferences.search-sources.js'
 
 function cookieFrom(res: Response): string {
   const setCookie = res.headers.get('set-cookie')
@@ -38,6 +43,7 @@ function put(cookie: string, body: unknown) {
 }
 
 beforeEach(() => {
+  db.delete(preferredSearchSources).run()
   db.delete(hiddenMediaTypes).run()
   db.delete(sessions).run()
   db.delete(users).run()
@@ -132,6 +138,140 @@ describe('PUT /api/preferences/media-types', () => {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hidden: [] }),
+    })
+
+    expect(res.status).toBe(401)
+  })
+})
+
+function getSources(cookie?: string) {
+  return app.request(
+    '/api/preferences/search-sources',
+    cookie ? { headers: { Cookie: cookie } } : undefined,
+  )
+}
+
+function putSource(cookie: string, type: string, body: unknown) {
+  return app.request(`/api/preferences/search-sources/${type}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Cookie: cookie },
+    body: JSON.stringify(body),
+  })
+}
+
+describe('GET /api/preferences/search-sources', () => {
+  it('starts empty, because never having chosen is the default', async () => {
+    const cookie = await signUp('fernando')
+
+    const res = await getSources(cookie)
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({ sources: {} })
+  })
+
+  it('refuses without a session', async () => {
+    expect((await getSources()).status).toBe(401)
+  })
+})
+
+describe('PUT /api/preferences/search-sources/{mediaType}', () => {
+  it('saves the choice and gives back the whole map', async () => {
+    const cookie = await signUp('fernando')
+
+    const res = await putSource(cookie, 'anime', { provider: 'kitsu' })
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({ sources: { anime: 'kitsu' } })
+  })
+
+  it('keeps one source per type, not one source', async () => {
+    // This is what the device-side memory could not do: it held a single
+    // pair, so choosing a source for manga forgot the one for anime.
+    const cookie = await signUp('fernando')
+
+    await putSource(cookie, 'anime', { provider: 'kitsu' })
+    const res = await putSource(cookie, 'manga', { provider: 'jikan' })
+
+    await expect(res.json()).resolves.toEqual({
+      sources: { anime: 'kitsu', manga: 'jikan' },
+    })
+  })
+
+  it('replaces the choice for a type instead of adding a second one', async () => {
+    const cookie = await signUp('fernando')
+
+    await putSource(cookie, 'anime', { provider: 'kitsu' })
+    const res = await putSource(cookie, 'anime', { provider: 'jikan' })
+
+    await expect(res.json()).resolves.toEqual({ sources: { anime: 'jikan' } })
+  })
+
+  it('undoes the choice with null, so the instance default answers again', async () => {
+    const cookie = await signUp('fernando')
+
+    await putSource(cookie, 'anime', { provider: 'kitsu' })
+    const res = await putSource(cookie, 'anime', { provider: null })
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({ sources: {} })
+  })
+
+  it('refuses a provider that does not serve that type', async () => {
+    // Same rule as `?provider=` on the search: an external id is only legible
+    // inside the pair, so a preference outside it would be born unreadable.
+    const cookie = await signUp('fernando')
+
+    const res = await putSource(cookie, 'movie', { provider: 'kitsu' })
+
+    expect(res.status).toBe(400)
+  })
+
+  it('answers 404 for a type that does not exist, not 400', async () => {
+    // The order of the guards is a decision: a typo must not read as "that
+    // provider does not serve this", or whoever wrote it goes looking for the
+    // association instead of the typo.
+    const cookie = await signUp('fernando')
+
+    const res = await putSource(cookie, 'nope', { provider: 'tmdb' })
+
+    expect(res.status).toBe(404)
+  })
+
+  it('is a preference of one person, never of the installation', () => {
+    // The whole reason this is not `media_types.default_provider_slug`: that
+    // column is the admin's, and writing it from the search would change what
+    // everyone on the server searches with.
+    //
+    // The second user is inserted straight into the table, and that is not a
+    // shortcut: this server has NO route that creates a second user (there is
+    // no registration and no admin-side creation), so every installation today
+    // has exactly one. The guard has to be provable before the day the route
+    // exists — that day is the one where finding out is expensive.
+    const [one] = db
+      .insert(users)
+      .values({ username: 'fernando', passwordHash: 'x' })
+      .returning({ id: users.id })
+      .all()
+    const [two] = db
+      .insert(users)
+      .values({ username: 'someone-else', passwordHash: 'x' })
+      .returning({ id: users.id })
+      .all()
+    if (!one || !two) {
+      throw new Error('could not seed the two users')
+    }
+
+    setSearchSource(one.id, 'anime', 'kitsu')
+
+    expect(searchSourcesOf(one.id)).toEqual({ anime: 'kitsu' })
+    expect(searchSourcesOf(two.id)).toEqual({})
+  })
+
+  it('refuses without a session', async () => {
+    const res = await app.request('/api/preferences/search-sources/anime', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'kitsu' }),
     })
 
     expect(res.status).toBe(401)

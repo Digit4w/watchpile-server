@@ -4,6 +4,7 @@ import {
   effectiveProviderOf,
   mediaTypeExists,
 } from '../media-types/media-types.query.js'
+import { preferredSourceFor } from '../preferences/preferences.search-sources.js'
 import {
   type SearchOutcome,
   searchProvider,
@@ -129,6 +130,7 @@ export const search: AppRouteHandler<SearchRoute> = async (c) => {
 
   const choice = chooseSearchProvider({
     requested: requestedProvider ?? null,
+    preferred: preferredSourceFor(user.id, type),
     effective: effectiveProviderOf(
       defaultProviderOf(type),
       associated.map(({ provider }) => provider.slug),

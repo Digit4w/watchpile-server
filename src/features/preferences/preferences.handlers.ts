@@ -5,8 +5,16 @@ import { mediaTypes } from '../../db/schema/media-types.js'
 import type { AppRouteHandler } from '../../lib/types.js'
 import type {
   GetMediaTypesRoute,
+  GetSearchSourcesRoute,
   SetMediaTypesRoute,
+  SetSearchSourceRoute,
 } from './preferences.routes.js'
+import {
+  clearSearchSource,
+  searchSourcesOf,
+  serves,
+  setSearchSource as storeSearchSource,
+} from './preferences.search-sources.js'
 
 function hiddenOf(userId: number): string[] {
   return db
@@ -86,4 +94,71 @@ export const setMediaTypes: AppRouteHandler<SetMediaTypesRoute> = (c) => {
   })
 
   return c.json({ hidden: [...hidden].sort() }, 200)
+}
+
+/**
+ * A fonte preferida de cada tipo — o mapa inteiro, pra tela desenhar o valor
+ * atual do seletor antes de a primeira busca voltar.
+ *
+ * **Ler o mapa não é reimplementar a escolha.** Quem decide quem responde uma
+ * busca é `chooseSearchProvider`, no servidor, e a resposta traz o provedor que
+ * de fato atendeu — a tela já prefere esse (`data.provider.slug`). Isto aqui
+ * responde outra pergunta, que só a tela tem: *o que o seletor mostra enquanto
+ * ninguém buscou nada?*
+ */
+export const getSearchSources: AppRouteHandler<GetSearchSourcesRoute> = (c) => {
+  const user = c.get('user')
+  if (!user) {
+    return c.json({ message: 'No active session' }, 401)
+  }
+
+  return c.json({ sources: searchSourcesOf(user.id) }, 200)
+}
+
+/**
+ * Escolhe a fonte de UM tipo, ou desfaz a escolha com `provider: null`.
+ *
+ * A ordem das guardas é a mesma de `GET /api/search`, e é decisão: **tipo que
+ * não existe é 404, provedor que não serve o tipo é 400**. Sem a distinção, um
+ * slug com erro de digitação se leria como "esse provedor não serve isso", e
+ * quem escreveu iria procurar a associação em vez do erro.
+ */
+export const setSearchSource: AppRouteHandler<SetSearchSourceRoute> = (c) => {
+  const user = c.get('user')
+  if (!user) {
+    return c.json({ message: 'No active session' }, 401)
+  }
+
+  const { mediaType } = c.req.valid('param')
+  const { provider } = c.req.valid('json')
+
+  const exists = db
+    .select({ slug: mediaTypes.slug })
+    .from(mediaTypes)
+    .where(eq(mediaTypes.slug, mediaType))
+    .get()
+
+  if (!exists) {
+    return c.json({ message: 'No media type with that slug' }, 404)
+  }
+
+  if (provider === null) {
+    clearSearchSource(user.id, mediaType)
+    return c.json({ sources: searchSourcesOf(user.id) }, 200)
+  }
+
+  /**
+   * A frase não interpola o slug do provedor: chave não entra em copy de tela
+   * (design system, seção 8, oitava leva). Quem sabe o NOME dele é a tela, que
+   * já tem a lista de fontes daquele tipo na mão pra desenhar o seletor.
+   */
+  if (!serves(mediaType, provider)) {
+    return c.json(
+      { message: 'That provider does not serve that media type' },
+      400,
+    )
+  }
+
+  storeSearchSource(user.id, mediaType, provider)
+  return c.json({ sources: searchSourcesOf(user.id) }, 200)
 }
