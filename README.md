@@ -1,60 +1,64 @@
 # Watchpile
 
+*[Leia em português](README.pt-BR.md)*
+
 | Build | License | Status |
 | --- | --- | --- |
 | [![CI](https://github.com/Digit4w/watchpile-server/actions/workflows/build.yml/badge.svg)](https://github.com/Digit4w/watchpile-server/actions/workflows/build.yml) | ![License](https://img.shields.io/badge/license-AGPL--3.0-blue) | ![Status](https://img.shields.io/badge/status-pre--release-orange) |
 
-Tracker de mídia self-hosted — filmes, séries, anime, mangá, jogos e livros — no
-espírito de Yamtrack, Trakt e Suwayomi. Um servidor, múltiplos clientes: este
-repositório expõe uma API HTTP documentada (`openapi.json`) e, por padrão,
-também serve o cliente web oficial.
+Self-hosted media tracker — films, series, anime, manga, games and books — in
+the spirit of Yamtrack, Trakt and Suwayomi. One server, many clients: this
+repository exposes a documented HTTP API (`openapi.json`) and, by default, also
+serves the official web client.
 
-> **Estado atual: `v0.1.0`, a primeira versão pública de teste.** Há imagem
-> publicada e instaladores prontos — as seções abaixo abrem por eles, e o build
-> a partir do código-fonte continua documentado logo em seguida.
+> **Current state: `v0.1.0`, the first public test release.** There is a
+> published image and there are ready-made installers — the sections below lead
+> with those, and building from source stays documented right after.
 >
-> **"Alpha" aqui não é modéstia, e o motivo é específico: não existe teste de
-> upgrade de migration entre versões.** Uma instalação que pule uma release
-> aplica as migrations em sequência e ninguém prova que a sequência funciona.
-> Quem tem centenas de obras importadas é quem mais sente se der errado —
-> **faça backup do `.db` antes de atualizar** (ver [Backup](#backup)). O `0.x`
-> do versionamento é o mesmo aviso, em forma legível por máquina.
+> **"Alpha" here is not modesty, and the reason is specific: there is no
+> migration upgrade test between versions.** An installation that skips a
+> release applies the migrations in sequence, and nobody has proven that
+> sequence works. Whoever has hundreds of imported titles is the one who feels
+> it most if it goes wrong — **back up the `.db` before upgrading** (see
+> [Backup](#backup)). The `0.x` in the version number is the same warning, in
+> machine-readable form.
 >
-> Duas coisas que você vai encontrar antes de qualquer feature: **nada é
-> assinado** (o Windows avisa que o publicador é desconhecido; o macOS só abre
-> com botão direito → Abrir) e **não há atualização automática** — saber que
-> saiu versão nova e baixar é manual.
+> Two things you will meet before any feature: **nothing is signed** (Windows
+> warns that the publisher is unknown; macOS only opens it with right-click →
+> Open) and **there are no automatic updates** — learning that a new version
+> shipped, and downloading it, is on you.
 
-## Formas de usar o Watchpile
+## Ways to run Watchpile
 
-Da mais simples para a mais manual — escolha pelo quanto de controle você
-quer sobre o processo, não por "qual é melhor".
+From the simplest to the most manual — pick by how much control you want over
+the process, not by "which one is better".
 
-### Docker (recomendado para homelab)
+### Docker (recommended for a homelab)
 
-Um container só, com a API e o cliente web juntos. Sem container de banco
-separado — o SQLite é um arquivo no volume.
+A single container, with the API and the web client together. No separate
+database container — SQLite is a file in the volume.
 
 ```bash
 docker run -d --name watchpile -p 3210:3210 -v ./data:/data \
   ghcr.io/digit4w/watchpile:0.1.0
 ```
 
-Ou baixe só o `compose.yaml` deste repositório e troque `build: .` por
-`image: ghcr.io/digit4w/watchpile:0.1.0`. **Não precisa clonar nada** — a
-imagem já traz o cliente web embutido.
+Or grab just the `compose.yaml` from this repository and swap `build: .` for
+`image: ghcr.io/digit4w/watchpile:0.1.0`. **You don't need to clone anything** —
+the image already ships the web client inside.
 
-**Duas tags, e a escolha é sobre atualizar:** `:0.1.0` é o que se fixa num
-`compose.yaml` que não pode mudar sozinho; `:latest` acompanha. Enquanto o
-projeto estiver em `0.x`, `:latest` pode trazer mudança que quebra — ver o
-aviso lá em cima.
+**Two tags, and the choice is about upgrading:** `:0.1.0` is what you pin in a
+`compose.yaml` that must not change on its own; `:latest` follows along. While
+the project is in `0.x`, `:latest` may bring a breaking change — see the warning
+above.
 
 <details>
-<summary><b>Buildar a imagem a partir do código-fonte</b></summary>
+<summary><b>Building the image from source</b></summary>
 
-`docker compose up --build` sozinho sobe a **API sem o cliente web** —
-`client-dist/` neste repositório é um diretório vazio de propósito: server e
-client são repositórios separados, sem monorepo. Pra embutir o cliente:
+`docker compose up --build` on its own brings up the **API without the web
+client** — `client-dist/` in this repository is an empty directory on purpose:
+server and client are separate repositories, with no monorepo. To embed the
+client:
 
 ```bash
 git clone https://github.com/Digit4w/watchpile-server.git
@@ -64,70 +68,70 @@ cp -r ../watchpile-client/dist/* client-dist/
 docker compose up --build
 ```
 
-É exatamente o que o CI faz antes de publicar (`.github/workflows/build.yml`).
+This is exactly what CI does before publishing (`.github/workflows/build.yml`).
 
-**Uma imagem buildada por você não traz as chaves de provedor embarcadas** —
-elas entram no build a partir de secrets, e uma instalação sem elas pede a sua
-própria em Settings, que é o modo de falha previsto.
+**An image you build yourself does not carry the embedded provider keys** — they
+enter the build from secrets, and an installation without them asks for your own
+in Settings, which is the intended failure mode.
 
 </details>
 
-O `compose.yaml` do repositório já traz um exemplo funcional. Variáveis mais
-comuns de ajustar:
+The repository's `compose.yaml` already ships a working example. The variables
+most often worth adjusting:
 
-| Variável | Default | Efeito |
+| Variable | Default | Effect |
 | --- | --- | --- |
-| `PUID` / `PGID` | `1000` / `1000` | dono dos arquivos criados em `/data` — combine com o seu usuário no host |
-| `TZ` | UTC do container | fuso horário — afeta "assisti hoje" e os logs |
-| `PORT` | `3210` | porta interna que a API escuta |
-| `WATCHPILE_SERVE_CLIENT` | `true` | `false` desliga o cliente web, sobra só a API |
+| `PUID` / `PGID` | `1000` / `1000` | owner of the files created under `/data` — match it to your user on the host |
+| `TZ` | container UTC | time zone — affects "watched today" and the logs |
+| `PORT` | `3210` | internal port the API listens on |
+| `WATCHPILE_SERVE_CLIENT` | `true` | `false` turns the web client off, leaving only the API |
 
-Volume único, `/data`, com o banco e (futuramente) o cache de arte dentro —
-mapeie só ele. `HEALTHCHECK` embutido no `Dockerfile` para Dockge, Portainer e
-Watchtower.
+A single volume, `/data`, holding the database and (in the future) the artwork
+cache — map only that one. A `HEALTHCHECK` is built into the `Dockerfile`, for
+Dockge, Portainer and Watchtower.
 
-Backup tem seção própria — ver [Backup](#backup), abaixo.
+Backup has its own section — see [Backup](#backup), below.
 
-**Com a imagem publicada**, o `compose.yaml` troca `build: .` por
-`image: ghcr.io/digit4w/watchpile:x.y.z`, e não precisa mais clonar o
-repositório — só baixar o `compose.yaml`. Use `:x.y.z` num `compose.yaml` que
-não pode mudar sozinho, e `:latest` se você quiser acompanhar.
+**With the published image**, `compose.yaml` swaps `build: .` for
+`image: ghcr.io/digit4w/watchpile:x.y.z`, and you no longer need to clone the
+repository — just download the `compose.yaml`. Use `:x.y.z` in a `compose.yaml`
+that must not change on its own, and `:latest` if you want to follow along.
 
 ### Desktop (Windows, macOS, Linux)
 
-App Electron — mesma API, mesmo cliente web, empacotados como aplicativo
-nativo. Sem terminal, sem Docker: primeiro admin é criado num wizard na
-primeira abertura.
+An Electron app — same API, same web client, packaged as a native application.
+No terminal, no Docker: the first admin is created by a wizard the first time
+you open it.
 
-Baixe da [página de Releases](https://github.com/Digit4w/watchpile-server/releases)
-e instale como qualquer outro app:
+Download it from the
+[Releases page](https://github.com/Digit4w/watchpile-server/releases) and
+install it like any other app:
 
-| Sistema | Arquivo |
+| System | File |
 | --- | --- |
-| Windows | `Watchpile.Setup.<versão>.exe` |
-| macOS (Apple Silicon) | `Watchpile-<versão>-arm64.dmg` |
-| Linux | `Watchpile-<versão>.AppImage` |
+| Windows | `Watchpile.Setup.<version>.exe` |
+| macOS (Apple Silicon) | `Watchpile-<version>-arm64.dmg` |
+| Linux | `Watchpile-<version>.AppImage` |
 
-**Nada é assinado**, e é a primeira coisa que você encontra: no Windows o
-SmartScreen avisa que o publicador é desconhecido (*Mais informações → Executar
-assim mesmo*); no macOS o app não abre com duplo-clique — **botão direito →
-Abrir**, uma vez.
+**Nothing is signed**, and that is the first thing you meet: on Windows,
+SmartScreen warns that the publisher is unknown (*More info → Run anyway*); on
+macOS the app will not open on a double-click — **right-click → Open**, once.
 
-**Atualizar é rodar o instalador novo por cima.** Ele reconhece a instalação
-existente e a substitui, e **o seu banco sobrevive** porque não mora na pasta
-de instalação: ele fica em `%APPDATA%\Watchpile` no Windows e no
-`~/Library/Application Support/Watchpile` no macOS. Não há atualização
-automática — você precisa saber que saiu versão nova.
+**Upgrading means running the new installer on top.** It recognises the existing
+installation and replaces it, and **your database survives**, because it does
+not live in the installation folder: it sits in `%APPDATA%\Watchpile` on Windows
+and in `~/Library/Application Support/Watchpile` on macOS. There are no
+automatic updates — you need to learn that a new version shipped.
 
-> **Não instale uma versão mais ANTIGA por cima de uma mais nova.** O
-> instalador aceita sem reclamar, e o app quebra depois: as migrations já
-> aplicadas deixam o banco num formato que o binário antigo não conhece.
+> **Do not install an OLDER version on top of a newer one.** The installer
+> accepts it without complaining, and the app breaks afterwards: the migrations
+> already applied leave the database in a shape the older binary does not know.
 
 <details>
-<summary><b>Rodar ou empacotar a partir do código-fonte</b></summary>
+<summary><b>Running or packaging from source</b></summary>
 
-Os dois repositórios precisam estar lado a lado (`watchpile-server/` e
-`watchpile-client/` na mesma pasta pai):
+The two repositories have to sit side by side (`watchpile-server/` and
+`watchpile-client/` under the same parent folder):
 
 ```bash
 git clone https://github.com/Digit4w/watchpile-server.git
@@ -135,27 +139,27 @@ git clone https://github.com/Digit4w/watchpile-client.git
 cd watchpile-server && bun install
 ```
 
-- **Modo dev**, janela recarrega ao mudar código do server: `bun run electron:dev`
-- **Pacote de verdade**, o mesmo artefato que o CI produz:
-  `bun run electron:build` — builda o client, empacota, e deixa o instalador
-  em `builds/<mac|windows|linux>/<preview|stable>/`
+- **Dev mode**, window reloads when server code changes: `bun run electron:dev`
+- **A real package**, the same artifact CI produces: `bun run electron:build` —
+  it builds the client, packages everything, and leaves the installer in
+  `builds/<mac|windows|linux>/<preview|stable>/`
 
-Ele builda só para o sistema operacional em que você o roda —
-`better-sqlite3` é módulo nativo, não dá pra cross-compilar de forma
-confiável. `.github/workflows/build.yml` cobre os três SOs via matriz do
-GitHub Actions.
+It only builds for the operating system you run it on — `better-sqlite3` is a
+native module, and cross-compiling it is not reliable.
+`.github/workflows/build.yml` covers the three systems through a GitHub Actions
+matrix.
 
-**Um pacote buildado por você não traz as chaves de provedor embarcadas** —
-elas entram a partir de secrets do CI, e sem elas a instalação pede a sua
-própria em Settings.
+**A package you build yourself does not carry the embedded provider keys** —
+they enter from CI secrets, and without them the installation asks for your own
+in Settings.
 
 </details>
 
-### Node direto (sem Docker, sem Electron)
+### Node directly (no Docker, no Electron)
 
-Para quem já tem um processo supervisor (PM2, systemd) e prefere não rodar
-Docker. É o mesmo binário dos outros dois modos — o que muda é só quem inicia
-o processo.
+For those who already run a process supervisor (PM2, systemd) and would rather
+not run Docker. It is the same binary as the other two modes — what changes is
+only who starts the process.
 
 ```bash
 git clone https://github.com/Digit4w/watchpile-server.git
@@ -168,69 +172,69 @@ PORT=3210 \
 node dist/index.js
 ```
 
-Você precisa colocar o build do cliente (`client/dist`, gerado com
-`bun run build` no repositório do client) no caminho apontado por
-`WATCHPILE_CLIENT_DIST_PATH` — nada disso é feito automaticamente fora do
-Docker e do Electron, que já embutem esse passo.
+You have to place the client build (`client/dist`, produced with `bun run build`
+in the client repository) at the path `WATCHPILE_CLIENT_DIST_PATH` points to —
+none of this happens automatically outside Docker and Electron, which already
+embed that step.
 
 ## Backup
 
-**Tudo que é seu está em um arquivo**: o `.db` do SQLite. Copiar esse arquivo
-é o backup inteiro — biblioteca, progresso, pilhas, log, e também as chaves de
-provedor que o admin configurou.
+**Everything that is yours lives in one file**: the SQLite `.db`. Copying that
+file is the whole backup — library, progress, piles, log, and also the provider
+keys the admin configured.
 
-**Não copie o `.db` com o servidor rodando.** Ele fica em modo WAL, e uma cópia
-crua pode vir corrompida ou sem as transações mais recentes. O jeito certo é
-`VACUUM INTO`, que produz um arquivo consistente sem parar nada:
+**Do not copy the `.db` while the server is running.** It runs in WAL mode, and
+a raw copy can come out corrupted or missing the most recent transactions. The
+right way is `VACUUM INTO`, which produces a consistent file without stopping
+anything:
 
 ```bash
 # Docker
 docker compose exec -u watchpile watchpile \
   sqlite3 /data/watchpile.db "VACUUM INTO '/data/backup-$(date +%F).db'"
 
-# Desktop ou Node — aponte para o seu WATCHPILE_DB_PATH
+# Desktop or Node — point it at your own WATCHPILE_DB_PATH
 sqlite3 ~/Library/Application\ Support/Watchpile/watchpile.db \
   "VACUUM INTO '$HOME/watchpile-backup-$(date +%F).db'"
 ```
 
-No Windows o banco fica em `%APPDATA%\Watchpile\watchpile.db`.
+On Windows the database sits in `%APPDATA%\Watchpile\watchpile.db`.
 
-`-u watchpile` importa no Docker: sem ele, `docker compose exec` roda como root
-(o entrypoint só troca de usuário pro processo principal), e o backup nasce com
-o mesmo problema de dono que o `PUID`/`PGID` existe pra evitar.
+The `-u watchpile` matters under Docker: without it, `docker compose exec` runs
+as root (the entrypoint only switches user for the main process), and the backup
+is born with the very ownership problem `PUID`/`PGID` exists to avoid.
 
-> **Faça isso antes de atualizar de versão**, enquanto o projeto estiver em
-> `0.x`. Não há teste de upgrade de migration entre versões, e as migrations
-> rodam sozinhas ao subir — se algo der errado, o backup é o que existe.
+> **Do this before upgrading**, while the project is in `0.x`. There is no
+> migration upgrade test between versions, and migrations run on their own at
+> startup — if something goes wrong, the backup is what you have.
 
-## Configuração
+## Configuration
 
-Toda variável de ambiente é **override, nunca requisito** — o servidor sobe
-com zero configuração, e cada uma tem um default sensato. Nenhuma delas é
-obrigatória.
+Every environment variable is an **override, never a requirement** — the server
+starts with zero configuration, and each one has a sensible default. None of
+them is mandatory.
 
-| Variável | Default | O quê |
+| Variable | Default | What it does |
 | --- | --- | --- |
-| `PORT` | `3210` | porta HTTP. `0` deixa o sistema operacional escolher |
-| `NODE_ENV` | `development` | `production` em qualquer imagem publicada |
-| `LOG_LEVEL` | `info` | nível do log estruturado (pino) |
-| `WATCHPILE_DB_PATH` | `./data/watchpile.db` | caminho do arquivo SQLite |
-| `WATCHPILE_SERVE_CLIENT` | `true` | se o servidor também serve o build do cliente web |
-| `WATCHPILE_CLIENT_DIST_PATH` | `./client-dist` | onde procurar o build do cliente, quando `WATCHPILE_SERVE_CLIENT=true` |
-| `PUID` / `PGID` | `1000` / `1000` | (só Docker) usuário do processo dentro do container |
+| `PORT` | `3210` | HTTP port. `0` lets the operating system pick one |
+| `NODE_ENV` | `development` | `production` in any published image |
+| `LOG_LEVEL` | `info` | level of the structured log (pino) |
+| `WATCHPILE_DB_PATH` | `./data/watchpile.db` | path to the SQLite file |
+| `WATCHPILE_SERVE_CLIENT` | `true` | whether the server also serves the web client build |
+| `WATCHPILE_CLIENT_DIST_PATH` | `./client-dist` | where to look for the client build, when `WATCHPILE_SERVE_CLIENT=true` |
+| `PUID` / `PGID` | `1000` / `1000` | (Docker only) user the process runs as inside the container |
 
-## API aberta a outros clientes
+## An API open to other clients
 
-O contrato é gerado a partir do código, não escrito à mão: `openapi.json`
-neste repositório é o que qualquer cliente — oficial ou de terceiros —
-consome. Com o servidor rodando, a documentação interativa fica em
-`/reference`.
+The contract is generated from the code, not written by hand: `openapi.json` in
+this repository is what any client — official or third-party — consumes. With
+the server running, the interactive documentation lives at `/reference`.
 
-Um cliente de terceiros que só conversa com essa API é obra separada: a
-licença AGPL do servidor não o alcança (ver Licença).
+A third-party client that only talks to that API is a separate work: the
+server's AGPL does not reach it (see License).
 
-## Licença
+## License
 
-[AGPL-3.0](LICENSE). A cláusula que importa no dia a dia: quem modificar o
-Watchpile e oferecer como serviço acessível pela rede precisa disponibilizar
-o código modificado.
+[AGPL-3.0](LICENSE). The clause that matters day to day: anyone who modifies
+Watchpile and offers it as a service reachable over a network has to make the
+modified source available.
