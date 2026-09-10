@@ -1358,6 +1358,53 @@ nomes é o mesmo dos vínculos: **`default_provider_slug` é a escolha crua**
   07/09: a referência oficial dele não traz uma amostra de resposta sequer, e a
   sub-seleção (`recommendations{node{start_date}}`) só se sabe que funciona
   batendo nela
+- **A junção tipo↔provedor virou ESCRITA, e ela é uma RECEITA — 10/09/2026**
+  (brief, 3.10). Ela era só lida desde que nasceu, e a consequência não estava
+  escrita: **tipo criado pelo admin nascia sem fonte pra sempre**. Medir mudou o
+  recorte antes da primeira linha — a linha carrega `search_body`, `field_map`,
+  `detail_path`, `provider_type_token` e mais, e **nenhum dos doze pares semeados
+  funciona vazio**: um `Light Novel` ligado ao AniList com a linha em branco
+  herdaria `anilistSearch('ANIME')` do provedor e devolveria **anime** pra toda
+  busca, plausível e sem erro. Então `PUT /api/media-types/{slug}/providers/
+  {provider}` **copia a receita** de um tipo que aquele provedor já serve —
+  provada, porque está respondendo agora. **`RECIPE_COLUMNS` é lista nomeada e
+  não spread**: a chave primária não é receita, e **coluna nova na junção precisa
+  entrar ali** — esquecer não dá erro, só produz par pela metade. `DELETE` recusa
+  com a contagem, porque `bindingFor` é o que serve arte, detalhe e resolução:
+  sem a linha as três param sem nada dizer por quê, e o padrão de busca que
+  apontava pra ali é limpo junto
+- **`router.use('/:slug')` NÃO cobre `/:slug/qualquer/coisa` — 10/09/2026.** Ele
+  casa um segmento e para ali. Sem uma guarda para `/:slug/*`, as duas rotas
+  novas nasceriam abertas a qualquer sessão, e **a proteção pareceria estar
+  cobrindo o que não cobre**. Há um teste que afirma isso, e ele fica vermelho
+  sem a linha — é a mesma família do `htmlFor` apontando pra id inexistente:
+  escrito, plausível, e sem efeito
+- **Tempo investido não é progresso — 10/09/2026** (brief, 3.12). `media_types.
+  tracks_time` diz se o tipo registra; `entries.time_spent` guarda **minutos
+  inteiros**. A decisão mora no TIPO porque audiolivro, podcast e curso têm o
+  mesmo formato; o minuto é inteiro porque decimal na coluna seria a primeira
+  fração do schema, e viria só por causa da unidade escolhida na exibição.
+  **Campo simples e não log**, ao contrário de `progress`: aqui não há histórico
+  — uma tabela de SESSÕES responderia "quando eu joguei" tão bem quanto "quanto",
+  e é feature própria. **Criar não aceita o campo** (*duas formas de uso são dois
+  schemas*), e `null`/ausente/`0` são três coisas distintas. Só `game` nasce
+  ligado, e **sem guarda de estado semeado**: a coluna está nascendo, então não há
+  decisão de admin anterior a preservar
+- **O coletivo dos grupos de unidade é declarado no PAR — 10/09/2026** (brief,
+  3.10). O `name` de cada grupo já vinha do provedor, e a semente dizia que **o
+  produto nunca decide como o agrupamento se chama** — a tela contradizia, com
+  `Seasons` em código pra todo tipo de mídia. Medido: **só `(tv, tmdb)` mapeia
+  `unitGroups`**, então ninguém via o defeito. **No par e não no tipo**, porque um
+  provedor pode agrupar mangá por ARCO. Ausente é legítimo, e há **dois caminhos**
+  até ele — o par não agrupa, ou o par agrupa e a obra não tem grupo: só o
+  segundo precisa de guarda, e ela precisou de teste próprio porque o primeiro já
+  dava nulo sozinho. **É a única string de UI que vive na definição de um
+  provedor**
+- **Teste que apaga estado SEMEADO envenena os vizinhos — 10/09/2026.** O bloco
+  que testa desvincular removia um par da instalação base, e o sintoma chegava
+  como `404` num teste que não fala de junção nenhuma. O retrato se tira na
+  **primeira passagem** e não no corpo do `describe`, que roda na COLETA — antes
+  de qualquer `beforeEach`, num estado que não é o que os testes vão ver
 - **v1 tem só TMDB** (filmes e séries). Os outros entram um por vez (3.12)
 
 ## O banco em WAL, e import em lotes
