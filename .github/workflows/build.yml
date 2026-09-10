@@ -272,6 +272,21 @@ jobs:
           tag_name: ${{ steps.tag.outputs.name }}
           files: dist-release/**/*
           draft: false
+          # ── A release DIZ o que mudou, e quem escreve é o GitHub ─────────
+          # A `v0.1.0` saiu com o corpo vazio, e até então isso não custava
+          # nada: ninguém era LEVADO até ela. Com o aviso de atualização em pé
+          # (`features/updates/`), a tela manda o testador para esta página —
+          # e uma página em branco no fim de um fluxo que promete "há versão
+          # nova" não responde a pergunta que trouxe a pessoa até aqui.
+          #
+          # Gerado e não escrito à mão: nota de release redigida por release é
+          # a segunda conta da mesma coisa, e é ela que fica pra trás.
+          #
+          # **Cobre só ESTE repositório** — os commits do `watchpile-client`
+          # não entram, e é a metade mais visível do que mudou. Aceito por
+          # ora; o dia em que incomodar, a saída é um `body` fixo apontando
+          # para lá, que o GitHub concatena com o que gera.
+          generate_release_notes: true
           # `0.x` já é o contrato legível por máquina de "quebra sem aviso", e
           # o pre-release é o legível por humano. O que justifica os dois é que
           # **não há teste de upgrade de migration entre versões** — e é isso,
