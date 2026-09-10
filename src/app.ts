@@ -12,6 +12,7 @@ import providersRouter from './features/providers/providers.index.js'
 import searchRouter from './features/search/search.index.js'
 import setupRouter from './features/setup/setup.index.js'
 import storageRouter from './features/storage/storage.index.js'
+import updatesRouter from './features/updates/updates.index.js'
 import { configureClientServing } from './lib/configure-client-serving.js'
 import { configureOpenAPI } from './lib/configure-open-api.js'
 import { createApp } from './lib/create-app.js'
@@ -38,6 +39,7 @@ app.route('/api/preferences', preferencesRouter)
 app.route('/api/providers', providersRouter)
 app.route('/api/search', searchRouter)
 app.route('/api/storage', storageRouter)
+app.route('/api/updates', updatesRouter)
 
 // depois de toda rota da API: o fallback do client só entra em jogo pra
 // path que nada acima respondeu (brief, 3.1 — "resto -> build do Vite")
