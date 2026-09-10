@@ -1,8 +1,10 @@
-import { eq, notInArray } from 'drizzle-orm'
+import { and, eq, notInArray } from 'drizzle-orm'
 import { beforeEach, describe, expect, it } from 'vitest'
 import app from '../../app.js'
 import { db } from '../../db/client.js'
 import { entries } from '../../db/schema/entries.js'
+import { externalIds } from '../../db/schema/external-ids.js'
+import { mediaTypeProviders } from '../../db/schema/media-type-providers.js'
 import { mediaTypeNames, mediaTypes } from '../../db/schema/media-types.js'
 import { sessions } from '../../db/schema/sessions.js'
 import { settings } from '../../db/schema/settings.js'
@@ -622,5 +624,221 @@ describe('o acervo de ícones', () => {
     // `podcast` é alias de `mic-signal`, e alias é o que o Lucide deprecia.
     expect(ICON_NAMES).toContain('mic-signal')
     expect(ICON_NAMES).not.toContain('podcast')
+  })
+})
+
+describe('vincular tipo a provedor', () => {
+  /**
+   * **O `beforeEach` do arquivo não restaura a junção**, e este bloco a
+   * APAGA — desvincular é metade do que ele testa. Sem isto, o par
+   * `(anime, anilist)` sumia para todo teste seguinte do arquivo, e o sintoma
+   * era um `404` num teste que não fala de junção nenhuma: *teste que apaga
+   * estado SEMEADO envenena os vizinhos, e a conta chega em outro lugar*.
+   *
+   * O retrato é tirado uma vez, antes de qualquer teste mexer na tabela.
+   */
+  let seededPairs: (typeof mediaTypeProviders.$inferSelect)[] = []
+
+  beforeEach(() => {
+    // Tirado na PRIMEIRA passagem, e não no corpo do `describe`: o corpo roda
+    // na COLETA, antes de qualquer `beforeEach`, e ler o banco ali é ler um
+    // estado que ainda não é o que os testes vão ver.
+    if (seededPairs.length === 0) {
+      seededPairs = db.select().from(mediaTypeProviders).all()
+    }
+    db.delete(mediaTypeProviders).run()
+    db.insert(mediaTypeProviders).values(seededPairs).run()
+    db.update(mediaTypes).set({ defaultProviderSlug: null }).run()
+  })
+
+  const link = (
+    cookie: string,
+    slug: string,
+    provider: string,
+    copyFrom: string,
+  ) =>
+    app.request(`/api/media-types/${slug}/providers/${provider}`, {
+      method: 'PUT',
+      headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ copyFrom }),
+    })
+
+  const unlink = (cookie: string, slug: string, provider: string) =>
+    app.request(`/api/media-types/${slug}/providers/${provider}`, {
+      method: 'DELETE',
+      headers: { Cookie: cookie },
+    })
+
+  async function createType(cookie: string, name: string): Promise<string> {
+    const res = await app.request('/api/media-types', {
+      method: 'POST',
+      headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        icon: 'book-open',
+        names: { en: { name, plural: `${name}s`, progressUnit: 'Volumes' } },
+      }),
+    })
+    return ((await res.json()) as MediaTypePublic).slug
+  }
+
+  it('copia a RECEITA inteira do par de origem, não só a associação', async () => {
+    // O que faz um par funcionar não é a linha existir: é `search_body`,
+    // `field_map`, `detail_path` e o token. Medido em 10/09/2026: nenhum dos
+    // doze pares semeados funciona vazio, e um `Light Novel` ligado ao AniList
+    // com a linha em branco herdaria `anilistSearch('ANIME')` do provedor e
+    // devolveria ANIME para toda busca — plausível, na coluna certa, sem erro.
+    const cookie = await signUpAdmin()
+    const slug = await createType(cookie, 'Light novel')
+
+    const res = await link(cookie, slug, 'anilist', 'manga')
+    expect(res.status).toBe(200)
+
+    const source = db
+      .select()
+      .from(mediaTypeProviders)
+      .where(
+        and(
+          eq(mediaTypeProviders.mediaTypeSlug, 'manga'),
+          eq(mediaTypeProviders.providerSlug, 'anilist'),
+        ),
+      )
+      .get()
+    const copy = db
+      .select()
+      .from(mediaTypeProviders)
+      .where(
+        and(
+          eq(mediaTypeProviders.mediaTypeSlug, slug),
+          eq(mediaTypeProviders.providerSlug, 'anilist'),
+        ),
+      )
+      .get()
+
+    // Campo a campo, e não só dois: é a mesma régua que fez o teste da semente
+    // comparar tudo — dois campos iguais não provam que os dez são.
+    expect(copy).toBeDefined()
+    for (const [column, value] of Object.entries(source ?? {})) {
+      if (column === 'mediaTypeSlug') {
+        continue
+      }
+      expect(copy?.[column as keyof typeof copy]).toEqual(value)
+    }
+    // E a chave primária é do DESTINO, não da origem: copiá-la escreveria o par
+    // de origem por cima de si mesmo.
+    expect(copy?.mediaTypeSlug).toBe(slug)
+  })
+
+  it('devolve o tipo com o provedor já na lista', async () => {
+    const cookie = await signUpAdmin()
+    const slug = await createType(cookie, 'Light novel')
+
+    const res = await link(cookie, slug, 'anilist', 'manga')
+    const body = (await res.json()) as MediaTypePublic
+
+    expect(body.providers).toEqual(['anilist'])
+    // Com um candidato só não há o que decidir, e o efetivo se resolve sozinho.
+    expect(body.effectiveProvider).toBe('anilist')
+  })
+
+  it('recusa copiar de um tipo que aquele provedor NÃO serve', async () => {
+    // Sem receita de origem não há promessa a fazer — e o par (movie, anilist)
+    // não existe.
+    const cookie = await signUpAdmin()
+    const slug = await createType(cookie, 'Light novel')
+
+    const res = await link(cookie, slug, 'anilist', 'movie')
+
+    expect(res.status).toBe(400)
+    expect(((await res.json()) as { message: string }).message).toContain(
+      'movie',
+    )
+  })
+
+  it('troca a receita quando se copia de novo, em vez de recusar', async () => {
+    // `PUT` idempotente: repetir com outro `copyFrom` é o gesto de "copiei do
+    // tipo errado". Recusar obrigaria a desvincular pra corrigir, e desvincular
+    // é o caminho guardado.
+    const cookie = await signUpAdmin()
+    const slug = await createType(cookie, 'Light novel')
+
+    await link(cookie, slug, 'anilist', 'manga')
+    const res = await link(cookie, slug, 'anilist', 'anime')
+    expect(res.status).toBe(200)
+
+    const copy = db
+      .select()
+      .from(mediaTypeProviders)
+      .where(
+        and(
+          eq(mediaTypeProviders.mediaTypeSlug, slug),
+          eq(mediaTypeProviders.providerSlug, 'anilist'),
+        ),
+      )
+      .get()
+    expect(copy?.providerTypeToken).toBe('ANIME')
+  })
+
+  it('recusa quem não é admin, e a guarda cobre o SUB-CAMINHO', async () => {
+    // `use('/:slug')` casa um segmento e para ali. Sem uma guarda para
+    // `/:slug/*`, isto passaria — e a proteção pareceria estar cobrindo o que
+    // não cobre.
+    const cookie = await signUpAdmin()
+    const slug = await createType(cookie, 'Light novel')
+    demote()
+
+    expect((await link(cookie, slug, 'anilist', 'manga')).status).toBe(403)
+    expect((await unlink(cookie, 'anime', 'anilist')).status).toBe(403)
+  })
+
+  it('desvincula, e limpa o padrão de busca que apontava pra ali', async () => {
+    // O padrão não pode apontar pra um provedor que não serve mais o tipo: ele
+    // prometeria uma fonte que a busca recusa.
+    const cookie = await signUpAdmin()
+    await app.request('/api/media-types/anime', {
+      method: 'PATCH',
+      headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ defaultProvider: 'anilist' }),
+    })
+
+    const res = await unlink(cookie, 'anime', 'anilist')
+    expect(res.status).toBe(200)
+
+    const body = (await res.json()) as MediaTypePublic
+    expect(body.providers).not.toContain('anilist')
+    expect(body.effectiveProvider).not.toBe('anilist')
+  })
+
+  it('recusa desvincular com a CONTAGEM quando obra já aponta pra ali', async () => {
+    // A consequência é invisível: `bindingFor` é o que serve arte, detalhe e
+    // resolução. Sem a linha, a obra fica com o vínculo e sem receita — a arte
+    // para de carregar e o detalhe para de abrir, sem nada dizendo por quê.
+    const cookie = await signUpAdmin()
+    const created = await app.request('/api/entries', {
+      method: 'POST',
+      headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mediaType: 'anime', title: 'Uma obra' }),
+    })
+    const entry = (await created.json()) as { id: number }
+    db.insert(externalIds)
+      .values({
+        entryId: entry.id,
+        provider: 'anilist',
+        externalId: '21',
+        mediaType: 'anime',
+      })
+      .run()
+
+    const res = await unlink(cookie, 'anime', 'anilist')
+
+    expect(res.status).toBe(409)
+    expect((await res.json()) as { entryCount: number }).toMatchObject({
+      entryCount: 1,
+    })
+  })
+
+  it('404 ao desvincular um par que não existe', async () => {
+    const cookie = await signUpAdmin()
+
+    expect((await unlink(cookie, 'movie', 'anilist')).status).toBe(404)
   })
 })

@@ -222,8 +222,125 @@ export const remove = createRoute({
   },
 })
 
+const PairParamSchema = z.object({
+  slug: z.string().min(1),
+  provider: z.string().min(1),
+})
+
+/**
+ * O corpo de vincular: **de qual tipo copiar a receita** — 10/09/2026.
+ *
+ * ── Por que copiar, e não uma linha em branco ───────────────────────────────
+ * A junção não é uma associação, é uma RECEITA: `search_path`, `search_body`,
+ * `field_map`, `detail_path`, `provider_type_token`, `units_path` e mais. Uma
+ * linha vazia cai no endpoint do PROVEDOR, e **medido: nenhum dos doze pares
+ * semeados funciona assim** — todos sobrescrevem alguma coisa.
+ *
+ * O caso que decide é o do pedido: um `Light Novel` vinculado ao AniList com a
+ * linha em branco herdaria `anilistSearch('ANIME')` do provedor e devolveria
+ * **anime** para toda busca de light novel — resultado plausível, na coluna
+ * certa, sem erro em lugar nenhum. É o mesmo formato de defeito que o
+ * `first_release_date` do IGDB tinha ao ler quatro dígitos de um timestamp.
+ *
+ * ── Por que copiar FUNCIONA, e não é gambiarra ──────────────────────────────
+ * Uma receita que já serve outro tipo é uma receita **provada** — ela está
+ * respondendo agora. E o caso do pedido é literalmente esse: o AniList põe
+ * light novel **dentro** de `MANGA`, então clonar o par `(manga, anilist)` dá
+ * o `search_body` certo, o `field_map` certo e o token certo.
+ *
+ * A alternativa era um editor de par — a superfície de "definir provedor" do
+ * brief 3.10 um nível abaixo. Ela resolve o caso geral e **ninguém acerta um
+ * `field_map` sem ver a resposta do provedor**, então ela não é o primeiro
+ * passo. Decisão do dono.
+ */
+const LinkBodySchema = z.object({
+  /**
+   * O slug do tipo cuja receita se copia. Precisa ser um tipo que **este
+   * provedor já serve** — é o que torna a cópia uma promessa e não um chute.
+   */
+  copyFrom: z.string().min(1),
+})
+
+/**
+ * A recusa de desvincular carrega a contagem, como a de apagar tipo.
+ *
+ * E ela é sobre uma consequência que não se vê: `bindingFor` é o que serve
+ * **arte, detalhe e resolução de obra**. Tirar a linha deixa toda obra daquele
+ * tipo vinculada àquele provedor sem receita — a arte para de carregar e o
+ * detalhe para de abrir, sem nada na tela dizendo por quê.
+ */
+const PairInUseSchema = z.object({
+  message: z.string(),
+  entryCount: z.number().int(),
+})
+
+export const link = createRoute({
+  method: 'put',
+  path: '/{slug}/providers/{provider}',
+  tags: ['Media types'],
+  request: {
+    params: PairParamSchema,
+    body: {
+      content: { 'application/json': { schema: LinkBodySchema } },
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: MediaTypeSchema } },
+      description: 'The provider now serves this media type',
+    },
+    400: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'There is no recipe to copy from',
+    },
+    401: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'No active session',
+    },
+    403: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'Only an admin sets the vocabulary of this server',
+    },
+    404: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'Media type or provider not found',
+    },
+  },
+})
+
+export const unlink = createRoute({
+  method: 'delete',
+  path: '/{slug}/providers/{provider}',
+  tags: ['Media types'],
+  request: { params: PairParamSchema },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: MediaTypeSchema } },
+      description: 'The provider no longer serves this media type',
+    },
+    401: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'No active session',
+    },
+    403: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'Only an admin sets the vocabulary of this server',
+    },
+    404: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'That provider does not serve this media type',
+    },
+    409: {
+      content: { 'application/json': { schema: PairInUseSchema } },
+      description: 'Titles of this type already point at this provider',
+    },
+  },
+})
+
 export type ListRoute = typeof list
 export type TemplatesRoute = typeof templates
 export type CreateRoute = typeof create
 export type UpdateRoute = typeof update
 export type RemoveRoute = typeof remove
+export type LinkRoute = typeof link
+export type UnlinkRoute = typeof unlink
