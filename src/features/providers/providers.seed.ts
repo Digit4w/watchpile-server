@@ -473,6 +473,13 @@ export const PROVIDER_SEEDS: readonly ProviderSeed[] = [
             name: 'name',
             count: 'episode_count',
             art: 'poster_path',
+            /**
+             * O coletivo, e ele é do PAR pelo mesmo motivo que `name` é do
+             * provedor: **o produto não decide como o agrupamento se chama**.
+             * Este é o único par que agrupa hoje, e por isso o único que o
+             * declara.
+             */
+            label: 'Seasons',
           },
           // Mesma forma do par de filme, lendo `name` e `first_air_date` —
           // que é a linha que justifica o mapa ser do par, de novo.

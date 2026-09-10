@@ -156,6 +156,19 @@ export const TitleDetailsSchema = z.object({
       art: z.string().nullable(),
     }),
   ),
+  /**
+   * Como o CONJUNTO de grupos se chama, no plural — 10/09/2026.
+   *
+   * **Declarado no par, não escrito na tela.** O `name` de cada grupo já vinha
+   * do provedor; o coletivo era `'Seasons'` em código, para todo tipo de mídia
+   * — o produto decidindo como o agrupamento se chama, que é exatamente o que a
+   * linha acima diz que ele nunca faz. Hoje ninguém vê o defeito porque só
+   * `(tv, tmdb)` mapeia grupos.
+   *
+   * **Nulo é legítimo**, e a tela então não inventa um coletivo: os nomes que o
+   * provedor deu já se explicam.
+   */
+  unitGroupLabel: z.string().nullable(),
   /** Se há de onde listar unidades. Falso dispensa a tela de pedir. */
   hasUnits: z.boolean(),
   /**
