@@ -51,8 +51,8 @@ export const mediaTypes = sqliteTable('media_types', {
    *
    * | `countsProgress` | Quem é | A folha de criar obra |
    * | --- | --- | --- |
-   * | `false` | filme, jogo | sem campo de total; a obra nasce `1` |
-   * | `true` | série, anime, mangá, livro | campo de total **opcional** |
+   * | `false` | filme, jogo, livro | sem campo de total; a obra nasce `1` |
+   * | `true` | série, anime, mangá | campo de total **opcional** |
    *
    * **Ele nasceu ao lado de um `asks_total`, que foi REMOVIDO na `0045`.**
    * Aquele campo dizia se o formulário pergunta o total, e depois desta
@@ -127,9 +127,16 @@ export const mediaTypes = sqliteTable('media_types', {
  * muda em inglês e em pt-BR a regra é outra — concatenar é o que trava tradução
  * (brief, 3.8).
  *
- * `progressUnit` é nulo de propósito em dois casos diferentes: filme não conta
- * nada, e jogo conta sem ter unidade natural (uns contam horas, outros
- * capítulos, outros conquistas). Impor "horas" decidiria pelo usuário.
+ * `progressUnit` é nulo em todo tipo que não conta — filme, jogo e, desde a
+ * `0048`, livro. **Unidade ao lado de um tipo sem contador é um par que a tela
+ * não sabe explicar**, e a linha de `/settings/media-types` mostra os dois.
+ *
+ * O motivo de cada nulo é diferente, e vale registrar: filme não tem o que
+ * contar; jogo contaria sem unidade natural (uns contam horas, outros
+ * capítulos, outros conquistas), e impor "horas" decidiria pelo usuário; livro
+ * conta páginas de verdade, e o dono decidiu que o produto não as pede — a
+ * pergunta que sobra ("quantas páginas tem?") já tem resposta por OBRA, em
+ * `entries.total`.
  */
 export const mediaTypeNames = sqliteTable(
   'media_type_names',

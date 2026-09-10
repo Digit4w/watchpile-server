@@ -124,10 +124,27 @@ describe('GET /api/media-types', () => {
 
     expect(counts('movie')).toBe(false)
     expect(counts('game')).toBe(false)
+    expect(counts('book')).toBe(false)
     expect(counts('tv')).toBe(true)
     expect(counts('anime')).toBe(true)
     expect(counts('manga')).toBe(true)
-    expect(counts('book')).toBe(true)
+  })
+
+  it('deixa sem unidade todo tipo que não conta', async () => {
+    // A unidade acompanha o contador (`0048`): `Pages` ao lado de um tipo sem
+    // contador é um par que a linha de `/settings/media-types` não sabe
+    // explicar. Afirma CADA UM pelo mesmo motivo do teste acima.
+    const cookie = await signUpAdmin()
+    const types = await list(cookie)
+    const unit = (slug: string) =>
+      types.find((t) => t.slug === slug)?.progressUnit
+
+    expect(unit('movie')).toBeNull()
+    expect(unit('game')).toBeNull()
+    expect(unit('book')).toBeNull()
+    expect(unit('tv')).toBe('Episodes')
+    expect(unit('anime')).toBe('Episodes')
+    expect(unit('manga')).toBe('Chapters')
   })
 })
 
