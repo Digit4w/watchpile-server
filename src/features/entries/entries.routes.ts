@@ -101,7 +101,19 @@ const CreateBodySchema = EntryBodySchema.required({ mediaType: true }).extend({
    */
   pileIds: z.array(z.number().int()).optional(),
 })
-const UpdateBodySchema = EntryBodySchema.partial()
+/**
+ * **Editar aceita um campo que criar não aceita** — 10/09/2026, e é a régua de
+ * *duas formas de uso são dois SCHEMAS*: `time_spent` é acompanhamento, como o
+ * progresso, e obra nenhuma nasce com quarenta horas jogadas. Pôr o campo no
+ * `pick` compartilhado o daria de graça à criação, onde ele não significa nada.
+ *
+ * **Minutos, inteiro, não negativo.** `null` LIMPA — e é diferente de ausente,
+ * que não mexe, e de `0`, que é "registrei, e é zero". Sem as três a tela não
+ * teria como desfazer.
+ */
+const UpdateBodySchema = EntryBodySchema.partial().extend({
+  timeSpent: z.number().int().nonnegative().nullable().optional(),
+})
 
 const IdParamSchema = z.object({
   id: z.coerce.number().int(),

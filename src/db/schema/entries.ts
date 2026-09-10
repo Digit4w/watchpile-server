@@ -36,6 +36,37 @@ export const entries = sqliteTable('entries', {
   progress: integer('progress').notNull().default(0),
   total: integer('total'),
   /**
+   * Quanto tempo se passou NESTA obra, em **minutos** — 10/09/2026.
+   *
+   * ── Tempo não é progresso, e é essa a decisão ───────────────────────────────
+   * Decisão do dono. O pedido era "jogo registra horas", e a leitura fácil seria
+   * ligar `counts_progress` em `game` de volta — o que **reverteria a `0044`**,
+   * tomada três dias antes olhando a tela. As duas coisas não cabiam juntas
+   * porque na verdade são duas: **quanto do acervo você percorreu** é o
+   * contador, e **quanto tempo você investiu** é outra pergunta, sem
+   * denominador e sem "acabou".
+   *
+   * Jogo continua sem contador — o status segue sendo o gesto fácil — e ganha
+   * onde registrar horas. Nada em `entries.progress` mudou.
+   *
+   * ── MINUTOS, e a tela divide ───────────────────────────────────────────────
+   * A coluna fica inteira e `47` vira `47m`, `150` vira `2h30`. É o que os
+   * trackers de jogo usam por dentro, e evita decimal na coluna e no log —
+   * "3,5 horas" seria a primeira fração do schema, e ela viria só por causa da
+   * unidade escolhida na exibição.
+   *
+   * ── Campo simples, e o custo está assumido ────────────────────────────────
+   * `progress` é contador + log append-only (brief, 3.11) porque **correção é
+   * evento**, e o histórico de progresso é uma feature. Aqui não há histórico:
+   * quem registra tempo escreve o total acumulado, e corrigir é escrever outro
+   * número. Uma tabela de SESSÕES responderia "quando eu joguei" tão bem quanto
+   * "quanto" — e é uma feature própria, não o mínimo honesto de hoje.
+   *
+   * **Nulo é "nunca registrou"**, e é diferente de zero, que é "registrei, e é
+   * zero". A tela usa a distinção pra não escrever `0h` em toda obra nova.
+   */
+  timeSpent: integer('time_spent'),
+  /**
    * De qual vínculo ESTA obra fala, quando a dona dela discorda do padrão.
    *
    * ── Por que ela existe, e por que aqui ──────────────────────────────────────

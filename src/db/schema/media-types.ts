@@ -77,6 +77,34 @@ export const mediaTypes = sqliteTable('media_types', {
     .notNull()
     .default(true),
   /**
+   * Este tipo registra TEMPO investido? — 10/09/2026, decisão do dono.
+   *
+   * **É outra pergunta que `counts_progress`, e as duas convivem.** O contador
+   * responde *quanto do acervo você percorreu* — tem unidade, tem denominador e
+   * tem fim. O tempo responde *quanto você investiu* — não tem nenhum dos três.
+   * Jogo é o caso que separou as duas: ele **não conta** (`0044`) e ainda assim
+   * alguém quer registrar quarenta horas.
+   *
+   * ── Por que a decisão mora no TIPO, e não na obra ─────────────────────────
+   * A alternativa era uma coluna em `entries` que só um tipo usaria, e ela
+   * cobraria no terceiro tipo que quisesse o mesmo. Aqui a pergunta é
+   * vocabulário — audiolivro, podcast e curso têm exatamente o mesmo formato —,
+   * e o vocabulário é aberto desde 30/08: o admin liga onde faz sentido, sem
+   * código novo. É a mesma régua que já pôs `progress_unit` e `counts_progress`
+   * neste lado.
+   *
+   * **Padrão `false`.** A maioria dos tipos não tem tempo a registrar, e um
+   * campo a mais em toda obra de toda instalação seria o oposto de "preferência
+   * existe onde o sistema não tem opinião". Só `game` nasce ligado.
+   *
+   * **Onde `counts_progress` mora, este também mora**: os dois são do TIPO e não
+   * mudam com o idioma, ao contrário de `progress_unit`. A unidade do tempo não
+   * é campo nenhum — é sempre minuto no banco e sempre `2h30` na tela.
+   */
+  tracksTime: integer('tracks_time', { mode: 'boolean' })
+    .notNull()
+    .default(false),
+  /**
    * O provedor PADRÃO deste tipo — quem responde a busca dele (brief, 3.10,
    * 01/09/2026; escopo reduzido à busca em 02/09).
    *
