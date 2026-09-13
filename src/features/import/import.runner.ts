@@ -1,5 +1,5 @@
 import { setImmediate as yieldToLoop } from 'node:timers/promises'
-import { type ArtTarget, warmArtInBackground } from '../art/art.warm.js'
+import { type ArtTarget, warmArt } from '../art/art.warm.js'
 import * as notifications from '../notifications/notifications.store.js'
 import * as jobs from './import.jobs.js'
 import {
@@ -87,11 +87,13 @@ export async function run(
        * minutos dizendo que ainda não acabou, a notificação mentir sobre o que
        * terminou, e uma CDN fora do ar reprovar um import que deu certo.
        *
-       * O `catch` é obrigatório e não é zelo: esta promessa não tem dono, e uma
-       * rejeição solta vira `unhandledRejection` — o processo morreria por causa
-       * de um pôster.
+       * **O que mudou em 13/09/2026 é que ele deixou de ser MUDO.** A decisão
+       * acima continua inteira — ele segue fora do contador do import —, e o
+       * que ele ganha é um contador PRÓPRIO: duas fases, dois números. Antes a
+       * pessoa lia "terminou", fechava a tela, e o servidor passava de 18 a 52
+       * minutos buscando arte sem nada dizer.
        */
-      warmArtInBackground(artTargets(reading.items))
+      startEnriching(jobId, artTargets(reading.items))
     }
   } catch (error) {
     const failure =
@@ -113,6 +115,79 @@ export async function run(
   } finally {
     aliveHere.delete(jobId)
   }
+}
+
+/**
+ * A SEGUNDA fase: buscar arte e snapshot do que o import trouxe, contando.
+ *
+ * ── Por que ela é um job, e não um laço solto ───────────────────────────────
+ * Porque a pergunta "em que pé está?" precisa ser respondível de fora do laço,
+ * e a resposta precisa sobreviver a quem fecha a aba — que é o mesmo argumento
+ * que fez `import_jobs` existir. Ela reusa a tabela inteira em vez de ganhar a
+ * sua: `status`, `total`, `processed`, o carimbo de cancelamento e a
+ * reconciliação de zumbi já estão lá.
+ *
+ * ── Nada aqui é esperado por ninguém ────────────────────────────────────────
+ * `run` já respondeu, o job de import já fechou e a notificação já saiu. O
+ * `catch` externo é obrigatório pelo mesmo motivo de sempre: esta promessa não
+ * tem dono, e uma rejeição solta vira `unhandledRejection` — o processo morreria
+ * por causa de um pôster.
+ */
+function startEnriching(importJobId: number, targets: ArtTarget[]): void {
+  if (targets.length === 0) {
+    return
+  }
+
+  const parent = jobs.byId(importJobId)
+  if (!parent) {
+    return
+  }
+
+  let job: jobs.Job
+  try {
+    job = jobs.start({
+      userId: parent.userId,
+      // A procedência: de qual importação este aquecimento veio.
+      source: parent.source,
+      mode: parent.mode,
+      kind: 'enrich',
+    })
+  } catch (error) {
+    /**
+     * **O índice único recusando é um caminho normal, não um defeito.** Dois
+     * imports em sequência rápida deixam o aquecimento do primeiro ainda vivo,
+     * e o segundo não abre o seu. A arte que ficar de fora cai na rede de
+     * segurança do caminho sob demanda, que é a mesma de sempre.
+     */
+    console.warn('[import] enrich job not started for %d', importJobId, error)
+    return
+  }
+
+  aliveHere.add(job.id)
+
+  void warmArt(targets, undefined, {
+    begin: (total) => jobs.setTotal(job.id, total),
+    /**
+     * **O contador anda de um em um, e isso é barato AQUI.** Uma escrita por
+     * obra seria cara no import, onde o lote inteiro leva 14ms; aqui cada volta
+     * já custa centenas de milissegundos de rede, então a escrita some no ruído.
+     */
+    tick: (done) => jobs.setProcessed(job.id, done),
+    cancelled: () => jobs.cancelRequested(job.id),
+  })
+    .then((written) => {
+      jobs.finish(job.id, {
+        status: jobs.cancelRequested(job.id) ? 'cancelled' : 'done',
+      })
+      return written
+    })
+    .catch((error: unknown) => {
+      console.error('[import] enrich failed for job %d', job.id, error)
+      jobs.finish(job.id, { status: 'failed', errorKind: 'unexpected' })
+    })
+    .finally(() => {
+      aliveHere.delete(job.id)
+    })
 }
 
 /**

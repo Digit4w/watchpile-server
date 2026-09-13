@@ -72,8 +72,55 @@ const TOKEN_WAIT_MS = 60_000
  * aquecimento de quatrocentas obras mantém o balde no chão e cada carta que a
  * pessoa abre espera os 5s inteiros. Custa alguns minutos a mais numa coisa que
  * ninguém está esperando terminar.
+ *
+ * ── O que MEDIR corrigiu, em 13/09/2026 ────────────────────────────────────
+ * A suposição registrada era que esta pausa *"não alivia nada num provedor a
+ * 3/s"*, e ela está **invertida**. Medido com uma grade fria de 20 cartas
+ * disputando o balde com este laço:
+ *
+ * | provedor | volta de 100ms | volta de 600ms (rede real) |
+ * | --- | --- | --- |
+ * | mal, kitsu (3/s) | 15 de 20 servidas | **20 de 20** |
+ * | anilist (0,5/s) | 2 de 20 | 2 de 20 |
+ *
+ * Ou seja: a 3/s é exatamente a pausa — somada à latência real da rede — que
+ * segura este laço em 1,07 req/s de um orçamento de 3, e é por isso que ele não
+ * atrapalha ninguém ali. E a 0,5/s ela é **irrelevante**, porque mesmo a 0,38
+ * req/s o laço já come 76% do orçamento sozinho.
+ *
+ * **A causa nunca foi a pausa: era não haver precedência.** Quem chegava
+ * primeiro levava, e este laço chega sempre, porque está rodando há minutos. O
+ * conserto é `background: true` nas duas chamadas abaixo — ver `reserveToken`.
  */
 const PAUSE_MS = 100
+
+/**
+ * Como este trabalho conta a si mesmo para quem está de fora — 13/09/2026.
+ *
+ * Ele existe porque o aquecimento era **invisível do começo ao fim**: medido
+ * contra 1.200 obras, ele leva 18,7 min no MyAnimeList e 52 min no AniList, e
+ * nesse intervalo a pessoa já leu "importação terminada" e fechou a tela.
+ *
+ * **É opcional de propósito.** Dos três chamadores, dois aquecem UMA obra —
+ * criar da busca e vincular —, e abrir uma linha de job para uma obra seria
+ * contabilidade mais cara que o trabalho. Quem tem muito o que fazer passa o
+ * relator; quem não tem, não passa. Uma função só, não duas.
+ */
+export type WarmProgress = {
+  /**
+   * Quantos alvos ÚNICOS o trabalho tem — dito uma vez, antes da primeira
+   * volta, porque o total só se conhece depois do `dedupe`.
+   */
+  begin: (total: number) => void
+  /**
+   * Uma volta terminou. **Conta também a que não precisou de rede**: a obra
+   * que já tinha arte e snapshot está pronta, e um contador que só somasse as
+   * buscadas nunca alcançaria o próprio denominador.
+   */
+  tick: (done: number) => void
+  /** Alguém pediu para parar. Conferido entre obras, como o `Stop` do import. */
+  cancelled?: () => boolean
+}
 
 export async function warmArt(
   targets: readonly ArtTarget[],
@@ -83,6 +130,7 @@ export async function warmArt(
    * do caminho novo. Injeção que não alcança não é injeção.
    */
   fetchImpl?: typeof fetch,
+  progress?: WarmProgress,
 ): Promise<number> {
   if (!env.WATCHPILE_ART_CACHE) {
     return 0
@@ -92,95 +140,129 @@ export async function warmArt(
   const providers = new Map<string, ProviderRow | undefined>()
   const bindings = new Map<string, TypeBinding | undefined>()
 
-  for (const target of dedupe(targets)) {
+  const work = dedupe(targets)
+  progress?.begin(work.length)
+  let done = 0
+
+  for (const target of work) {
     /**
-     * **Duas perguntas, não uma** — 07/09/2026, quando o snapshot entrou.
-     *
-     * Antes o laço pulava a obra que já tinha arte, e isso passou a esconder o
-     * caso em que a arte está em disco e o snapshot não existe: toda obra
-     * adicionada antes desta tabela. Uma condição só decidiria pelas duas, e a
-     * que ficasse de fora nunca encheria.
+     * **Antes da obra, não no meio dela.** Conferir aqui custa uma leitura por
+     * obra — barato num laço cuja volta já leva centenas de milissegundos —, e
+     * é o que permite parar um aquecimento de 52 minutos sem esperar o fim.
      */
-    const needsArt = !hasArt(
-      target.provider,
-      target.externalId,
-      target.mediaType,
-    )
-    const needsSnapshot = !hasSnapshot(target)
-
-    if (!needsArt && !needsSnapshot) {
-      continue
+    if (progress?.cancelled?.()) {
+      break
     }
-
-    const provider = remember(providers, target.provider, () =>
-      providerBySlug(target.provider),
-    )
-    if (!provider) {
-      continue
-    }
-
-    const binding = remember(
-      bindings,
-      `${target.mediaType} ${target.provider}`,
-      () => bindingFor(target.mediaType, target.provider),
-    )
 
     /**
-     * **Nada aqui pode derrubar o processo.** Isto roda solto, sem ninguém
-     * esperando a promessa: uma exceção viraria `unhandledRejection` e mataria
-     * o container por causa de um pôster.
+     * **O `finally` é quem conta, e não uma linha antes de cada saída.**
+     *
+     * O corpo abaixo tem três saídas — a obra já pronta, o provedor que sumiu,
+     * e o caminho normal —, e contar em cada uma seria três cópias da mesma
+     * linha, com a terceira esperando alguém esquecê-la. Aqui a contagem é do
+     * BLOCO: toda volta que começa, termina contada, seja qual for o caminho.
      */
     try {
-      const fetched = needsArt
-        ? await fetchArt({
+      /**
+       * **Duas perguntas, não uma** — 07/09/2026, quando o snapshot entrou.
+       *
+       * Antes o laço pulava a obra que já tinha arte, e isso passou a esconder o
+       * caso em que a arte está em disco e o snapshot não existe: toda obra
+       * adicionada antes desta tabela. Uma condição só decidiria pelas duas, e a
+       * que ficasse de fora nunca encheria.
+       */
+      const needsArt = !hasArt(
+        target.provider,
+        target.externalId,
+        target.mediaType,
+      )
+      const needsSnapshot = !hasSnapshot(target)
+
+      if (!needsArt && !needsSnapshot) {
+        continue
+      }
+
+      const provider = remember(providers, target.provider, () =>
+        providerBySlug(target.provider),
+      )
+      if (!provider) {
+        continue
+      }
+
+      const binding = remember(
+        bindings,
+        `${target.mediaType} ${target.provider}`,
+        () => bindingFor(target.mediaType, target.provider),
+      )
+
+      /**
+       * **Nada aqui pode derrubar o processo.** Isto roda solto, sem ninguém
+       * esperando a promessa: uma exceção viraria `unhandledRejection` e mataria
+       * o container por causa de um pôster.
+       */
+      try {
+        const fetched = needsArt
+          ? await fetchArt({
+              provider,
+              binding,
+              externalId: target.externalId,
+              waitForTokenMs: TOKEN_WAIT_MS,
+              /**
+               * **Este trabalho cede a vez, e é o ponto do ciclo de 13/09.**
+               * Medido: no AniList (0,5/s) o aquecimento derrubava uma grade
+               * fria de 20 cartas de 7 servidas para 2, porque os dois pediam
+               * do mesmo balde sem precedência.
+               */
+              background: true,
+              fetchImpl,
+            })
+          : null
+
+        /**
+         * **O snapshot vem DEPOIS da arte, e é de graça quando ela veio.** As
+         * duas saem do mesmo detalhe, e `fetchArt` acabou de enchê-lo no
+         * `provider_cache` — esta chamada lê de lá. Quando só o snapshot falta,
+         * aí sim é uma ida à rede, que é a única forma de saber o que o provedor
+         * diz.
+         */
+        if (needsSnapshot) {
+          await captureSnapshot({
             provider,
             binding,
             externalId: target.externalId,
+            mediaType: target.mediaType,
             waitForTokenMs: TOKEN_WAIT_MS,
+            background: true,
             fetchImpl,
           })
-        : null
+        }
 
-      /**
-       * **O snapshot vem DEPOIS da arte, e é de graça quando ela veio.** As
-       * duas saem do mesmo detalhe, e `fetchArt` acabou de enchê-lo no
-       * `provider_cache` — esta chamada lê de lá. Quando só o snapshot falta,
-       * aí sim é uma ida à rede, que é a única forma de saber o que o provedor
-       * diz.
-       */
-      if (needsSnapshot) {
-        await captureSnapshot({
-          provider,
-          binding,
-          externalId: target.externalId,
-          mediaType: target.mediaType,
-          waitForTokenMs: TOKEN_WAIT_MS,
-          fetchImpl,
-        })
+        if (fetched?.ok) {
+          writeArt({
+            provider: target.provider,
+            externalId: target.externalId,
+            mediaType: target.mediaType,
+            bytes: fetched.art.bytes,
+            contentType: fetched.art.contentType,
+          })
+          written += 1
+        }
+        /**
+         * **Falhar aqui não vira nova tentativa**, e é decisão: quem falhou tem a
+         * rede de segurança do caminho sob demanda, que roda quando a pessoa
+         * finalmente olhar aquela carta. Repetir aqui gastaria cota de todo mundo
+         * com uma obra que talvez ninguém abra.
+         */
+      } catch (error) {
+        console.error('[art] warm failed for %s', target.externalId, error)
       }
 
-      if (fetched?.ok) {
-        writeArt({
-          provider: target.provider,
-          externalId: target.externalId,
-          mediaType: target.mediaType,
-          bytes: fetched.art.bytes,
-          contentType: fetched.art.contentType,
-        })
-        written += 1
-      }
-      /**
-       * **Falhar aqui não vira nova tentativa**, e é decisão: quem falhou tem a
-       * rede de segurança do caminho sob demanda, que roda quando a pessoa
-       * finalmente olhar aquela carta. Repetir aqui gastaria cota de todo mundo
-       * com uma obra que talvez ninguém abra.
-       */
-    } catch (error) {
-      console.error('[art] warm failed for %s', target.externalId, error)
+      await sleep(PAUSE_MS)
+      await yieldToLoop()
+    } finally {
+      done += 1
+      progress?.tick(done)
     }
-
-    await sleep(PAUSE_MS)
-    await yieldToLoop()
   }
 
   return written

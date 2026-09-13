@@ -61,6 +61,7 @@ function parseJson<T>(raw: string, fallback: T): T {
 function toPublic(row: jobs.Job) {
   return {
     id: row.id,
+    kind: row.kind,
     source: row.source as ImportSourceSlug,
     mode: row.mode,
     status: row.status,
@@ -148,8 +149,22 @@ export const status: AppRouteHandler<StatusRoute> = (c) => {
 
   reconcileInterrupted()
 
-  const running = jobs.running()
+  const running = jobs.running('import')
   const latest = jobs.latestFor(user.id)
+
+  /**
+   * **O aquecimento é a SEGUNDA fase, e tem contador próprio** — 13/09/2026.
+   *
+   * Ele não entra em `running`: aquela pergunta é "o recurso está ocupado?", e
+   * a resposta dela governa se alguém pode começar a importar. Aquecer não
+   * ocupa o recurso — é I/O de rede com pausa —, então somá-lo ali recusaria
+   * imports por até uma hora depois do anterior ter terminado.
+   *
+   * **E é o da PESSOA, não o da instalação.** `running` é da instalação porque
+   * o que ele impede é de todo mundo; este é um trabalho sobre a biblioteca de
+   * quem importou, e é só a ela que o número diz alguma coisa.
+   */
+  const enriching = jobs.latestEnrichFor(user.id)
 
   return c.json(
     {
@@ -157,6 +172,7 @@ export const status: AppRouteHandler<StatusRoute> = (c) => {
       running: running ? toPublic(running) : null,
       mine: running?.userId === user.id,
       latest: latest ? toPublic(latest) : null,
+      enriching: enriching?.status === 'running' ? toPublic(enriching) : null,
     },
     200,
   )

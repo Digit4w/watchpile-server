@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Watchpile API",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "components": {
     "schemas": {
@@ -174,9 +174,12 @@
           },
           "latest": {
             "$ref": "#/components/schemas/ImportJob"
+          },
+          "enriching": {
+            "$ref": "#/components/schemas/ImportJob"
           }
         },
-        "required": ["sources", "running", "mine", "latest"]
+        "required": ["sources", "running", "mine", "latest", "enriching"]
       },
       "ImportSource": {
         "type": "object",
@@ -202,6 +205,10 @@
         "properties": {
           "id": {
             "type": "integer"
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["import", "enrich"]
           },
           "source": {
             "type": "string",
@@ -285,6 +292,7 @@
         },
         "required": [
           "id",
+          "kind",
           "source",
           "mode",
           "status",
