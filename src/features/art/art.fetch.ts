@@ -58,6 +58,8 @@ export async function fetchArt({
   binding,
   externalId,
   waitForTokenMs,
+  background = false,
+  fresh = false,
   fetchImpl = fetch,
 }: {
   provider: ProviderRow
@@ -69,6 +71,10 @@ export async function fetchArt({
    * que é trabalho de segundo plano e pode esperar muito mais que uma carta.
    */
   waitForTokenMs?: number
+  /** Ver `fetchDetail`: o aquecimento respeita o colchão do primeiro plano. */
+  background?: boolean
+  /** Ver `fetchDetail`: o `Refresh` ignora o cache de 6h e vai à rede. */
+  fresh?: boolean
   /** Injetável só para teste; produção usa o `fetch` global do Node. */
   fetchImpl?: typeof fetch
 }): Promise<ArtOutcome> {
@@ -100,6 +106,8 @@ export async function fetchArt({
      * fria de 20 cartas de um provedor a 3/s, oito voltavam vazias.
      */
     waitForTokenMs: waitForTokenMs ?? TOKEN_WAIT_MS,
+    background,
+    fresh,
     fetchImpl,
   })
 

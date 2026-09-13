@@ -395,7 +395,7 @@ describe('o executor não segura o banco entre lotes', () => {
     const espiao = (async () => {
       for (let i = 0; i < 3; i += 1) {
         await yieldToLoop()
-        leituras.push(jobs.running()?.processed ?? -1)
+        leituras.push(jobs.running('import')?.processed ?? -1)
       }
     })()
 
@@ -405,5 +405,94 @@ describe('o executor não segura o banco entre lotes', () => {
     // importação rodava, que é a coisa toda.
     expect(leituras.every((n) => n >= 0)).toBe(true)
     expect(new Set(leituras).size).toBeGreaterThan(1)
+  })
+})
+
+/**
+ * A SEGUNDA fase — 13/09/2026.
+ *
+ * O aquecimento era invisível: o `status` ia a `done` e o sino disparava antes
+ * de ele começar, e nesse intervalo — 18,7 min no MyAnimeList, 52 min no
+ * AniList, medidos contra 1.200 obras — a pessoa já tinha lido "terminou".
+ *
+ * Estes testes afirmam a FORMA: duas linhas, dois contadores, e a primeira
+ * fechando sem esperar pela segunda. O que acontece dentro do laço de
+ * aquecimento é de `art.warm.test.ts`.
+ */
+describe('o enriquecimento é a segunda fase, e tem contador próprio', () => {
+  it('abre uma linha PRÓPRIA, sem tocar na do import', async () => {
+    const userId = criarUsuario()
+    const job = jobs.start({ userId, source: 'anilist', mode: 'skip' })
+
+    await run(job.id, fonte([item(1), item(2)]), adiciona, 'skip')
+
+    const importado = jobs.byId(job.id)
+    expect(importado?.kind).toBe('import')
+    expect(importado?.status).toBe('done')
+
+    const enrich = jobs.latestOfKindFor(userId, 'enrich')
+    expect(enrich).toBeDefined()
+    expect(enrich?.id).not.toBe(job.id)
+    expect(enrich?.kind).toBe('enrich')
+    /** A procedência: de qual importação este aquecimento veio. */
+    expect(enrich?.source).toBe('anilist')
+  })
+
+  /**
+   * A decisão de 07/09 continua inteira, e é ela que este teste protege:
+   * segurar o `done` no aquecimento faria o contador parar em `N / N` por
+   * minutos e uma CDN fora do ar reprovar um import que deu certo.
+   */
+  it('fecha o import SEM esperar pelo aquecimento', async () => {
+    const userId = criarUsuario()
+    const job = jobs.start({ userId, source: 'anilist', mode: 'skip' })
+
+    await run(job.id, fonte([item(1)]), adiciona, 'skip')
+
+    expect(jobs.byId(job.id)?.status).toBe('done')
+    expect(jobs.byId(job.id)?.finishedAt).not.toBeNull()
+  })
+
+  /**
+   * **O índice único passou a ser por TIPO**, e é o que impede um aquecimento
+   * de 52 minutos de recusar todo import novo. Antes ele indexava só `status`,
+   * o que valia "uma linha viva na instalação inteira".
+   */
+  it('deixa um import começar com um aquecimento vivo', async () => {
+    const userId = criarUsuario()
+    const primeiro = jobs.start({ userId, source: 'anilist', mode: 'skip' })
+    await run(primeiro.id, fonte([item(1)]), adiciona, 'skip')
+
+    const enrich = jobs.latestOfKindFor(userId, 'enrich')
+    expect(enrich?.status).toBe('running')
+
+    // Com o índice antigo, esta linha lançaria por constraint.
+    const segundo = jobs.start({ userId, source: 'csv', mode: 'skip' })
+    expect(segundo.kind).toBe('import')
+    expect(jobs.running('import')?.id).toBe(segundo.id)
+  })
+
+  /** Obra sem vínculo não tem de onde tirar arte — não há o que aquecer. */
+  it('não abre linha nenhuma quando não há alvo', async () => {
+    const userId = criarUsuario()
+    const job = jobs.start({ userId, source: 'csv', mode: 'skip' })
+
+    const semVinculo: ImportItem = { ...item(1), links: [] }
+    await run(job.id, fonte([semVinculo]), adiciona, 'skip')
+
+    expect(jobs.latestOfKindFor(userId, 'enrich')).toBeUndefined()
+  })
+
+  /** Cancelar o import não pode deixar um aquecimento órfão para trás. */
+  it('não aquece o que foi cancelado', async () => {
+    const userId = criarUsuario()
+    const job = jobs.start({ userId, source: 'anilist', mode: 'skip' })
+
+    const items = Array.from({ length: jobs.BATCH_SIZE * 2 }, (_, i) => item(i))
+    jobs.requestCancel(job.id, userId)
+    await run(job.id, fonte(items), adiciona, 'skip')
+
+    expect(jobs.byId(job.id)?.status).toBe('cancelled')
+    expect(jobs.latestOfKindFor(userId, 'enrich')).toBeUndefined()
   })
 })

@@ -1,0 +1,40 @@
+-- O enriquecimento vira JOB, com contador próprio — 13/09/2026, decisão do dono.
+--
+-- O aquecimento que o import dispara ao terminar (`art.warm.ts`) era invisível
+-- do começo ao fim: o `status` ia a `done` e o sino disparava `import-finished`
+-- ANTES de ele começar. Medido em 13/09/2026 contra 1.200 obras, ele leva
+-- **18,7 min no MyAnimeList e 52 min no AniList** — tempo em que a pessoa já
+-- leu "terminou", fechou a tela, e o servidor segue buscando arte sem nada
+-- dizer.
+--
+-- ── Duas FASES com dois contadores, nunca um número só ──────────────────────
+-- Somar o aquecimento ao contador do import desfaria a decisão de 07/09/2026,
+-- escrita no runner: segurar o `done` nele faria o contador parar em `426/426`
+-- por minutos e **uma CDN fora do ar reprovar um import que deu certo**. E
+-- somá-los cairia na régua de 07/09 — *número que soma dois motivos não confere
+-- nada*. Então importar termina quando importou, e enriquecer é trabalho
+-- próprio, com `n / total` legível enquanto roda.
+--
+-- ── Por que `kind` numa tabela que já existe ────────────────────────────────
+-- `import_jobs` já é uma tabela de job completa: `status`, `total`,
+-- `processed`, cancelamento com carimbo, reconciliação de zumbi. Uma segunda
+-- tabela copiaria as seis colunas e as duas regras, e é assim que uma das
+-- cópias fica para trás. O nome da tabela passa a ser mais estreito que o
+-- conteúdo, e isso é dívida de nome — barata perto de manter dois esquemas.
+ALTER TABLE `import_jobs` ADD `kind` text DEFAULT 'import' NOT NULL;
+--> statement-breakpoint
+-- ── O índice único tinha de mudar, e este é o ponto que morde ───────────────
+-- Ele indexava **só `status`**, então valia "uma linha `running` na instalação
+-- inteira". Com o enriquecimento virando job, um aquecimento de 52 minutos
+-- passaria a **recusar todo import novo** durante uma hora — o oposto do que
+-- este ciclo quer.
+--
+-- O argumento original continua de pé, e é o que decide a forma: "uma por vez"
+-- existe porque **o import congela o servidor** (escrita síncrona do
+-- `better-sqlite3`, medida em 14,2ms por lote de 200). O aquecimento não
+-- escreve em lote — ele é I/O de rede com pausa entre obras —, então os dois
+-- podem coexistir. O que não pode é **dois do mesmo tipo**, e é isso que o
+-- índice passa a dizer.
+DROP INDEX `import_jobs_one_running`;
+--> statement-breakpoint
+CREATE UNIQUE INDEX `import_jobs_one_running` ON `import_jobs` (`status`,`kind`) WHERE `import_jobs`.`status` = 'running';

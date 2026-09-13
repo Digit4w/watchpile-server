@@ -757,3 +757,111 @@ describe('o snapshot, quando o provedor não responde', () => {
     expect(body.relations).toEqual([])
   })
 })
+
+/**
+ * O `Refresh` — itens 11(c) e 11(d) da fila do dono, 13/09/2026.
+ *
+ * O que estes testes protegem é **a regra que o dono decidiu**: o total só
+ * cresce. Ela não cabe em `domain/` porque é uma escrita condicional em SQL, e
+ * o que a prova é ter as duas direções no mesmo banco — um teste que só
+ * verificasse o crescimento passaria por igual numa implementação que
+ * sobrescreve sempre.
+ */
+describe('POST /api/entries/{id}/refresh', () => {
+  it('recusa quando a obra não tem de onde reler', async () => {
+    const cookie = await signUpAdmin()
+    giveKey()
+
+    // Obra digitada à mão: sem `source`, sem vínculo nenhum.
+    const created = await app.request('/api/entries', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ mediaType: 'movie', title: 'À mão' }),
+    })
+    const { id } = (await created.json()) as { id: number }
+
+    const res = await app.request(`/api/entries/${id}/refresh`, {
+      method: 'POST',
+      headers: { Cookie: cookie },
+    })
+
+    expect(res.status).toBe(404)
+  })
+
+  /**
+   * **Não há rota que crie um segundo usuário** (`server/CLAUDE.md`), então o
+   * vizinho nasce direto no banco. O que se prova é a guarda, e ela não depende
+   * de como a linha chegou lá.
+   */
+  it('não deixa a obra de outra pessoa ser relida', async () => {
+    const cookie = await signUpAdmin()
+    giveKey()
+
+    const [vizinho] = db
+      .insert(users)
+      .values({ username: 'vizinho', passwordHash: 'x' })
+      .returning({ id: users.id })
+      .all()
+
+    const [alheia] = db
+      .insert(entries)
+      .values({
+        userId: vizinho?.id ?? 0,
+        mediaType: 'movie',
+        title: 'De outra pessoa',
+      })
+      .returning({ id: entries.id })
+      .all()
+
+    db.insert(externalIds)
+      .values({
+        entryId: alheia?.id ?? 0,
+        provider: 'tmdb',
+        externalId: '550',
+        mediaType: 'movie',
+      })
+      .run()
+
+    const res = await app.request(`/api/entries/${alheia?.id}/refresh`, {
+      method: 'POST',
+      headers: { Cookie: cookie },
+    })
+
+    // Mesma resposta de "não existe": separar contaria o acervo alheio.
+    expect(res.status).toBe(404)
+  })
+
+  it('exige sessão', async () => {
+    const res = await app.request('/api/entries/1/refresh', { method: 'POST' })
+    expect(res.status).toBe(401)
+  })
+})
+
+describe('POST /api/entries/refresh — a varredura', () => {
+  it('recusa quando nada na biblioteca tem vínculo', async () => {
+    const cookie = await signUpAdmin()
+    giveKey()
+
+    await app.request('/api/entries', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ mediaType: 'movie', title: 'À mão' }),
+    })
+
+    const res = await app.request('/api/entries/refresh', {
+      method: 'POST',
+      headers: { Cookie: cookie },
+    })
+
+    /**
+     * **422 e não 404**: a rota existe e a biblioteca também — o que falta é
+     * obra com vínculo de onde reler.
+     */
+    expect(res.status).toBe(422)
+  })
+
+  it('exige sessão', async () => {
+    const res = await app.request('/api/entries/refresh', { method: 'POST' })
+    expect(res.status).toBe(401)
+  })
+})

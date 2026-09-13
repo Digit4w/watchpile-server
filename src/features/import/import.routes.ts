@@ -39,7 +39,15 @@ const ProblemSchema = z
 const JobSchema = z
   .object({
     id: z.number().int(),
-    source: z.enum(IMPORT_SOURCES),
+    /**
+     * Que trabalho esta linha é. `import` lê uma fonte e escreve obras;
+     * `enrich` busca arte e snapshot do que o import trouxe — **duas fases com
+     * dois contadores**, porque *número que soma dois motivos não confere nada*
+     * (design system, seção 8).
+     */
+    kind: z.enum(['import', 'enrich', 'refresh']),
+    /** Nula na varredura: ela não vem de fonte nenhuma. Ver o schema. */
+    source: z.enum(IMPORT_SOURCES).nullable(),
     mode: z.enum(['skip', 'overwrite']),
     status: z.enum(['running', 'done', 'failed', 'cancelled']),
     /**
@@ -131,6 +139,32 @@ const StatusSchema = z
     mine: z.boolean(),
     /** A última importação DESTA pessoa, para o bloco de resultado. */
     latest: JobSchema.nullable(),
+    /**
+     * O aquecimento em andamento DESTA pessoa — a segunda fase.
+     *
+     * **Separado de `running` de propósito.** Aquela pergunta é "o recurso está
+     * ocupado?", e quem a responde governa se dá pra começar outro import;
+     * aquecer não ocupa o recurso (é rede com pausa entre obras), então somá-lo
+     * ali recusaria imports por até uma hora depois do anterior ter terminado.
+     *
+     * Medido em 13/09/2026: para 1.200 obras ele leva 18,7 min no MyAnimeList e
+     * 52 min no AniList. Até então era **invisível** — o `status` ia a `done` e
+     * o sino disparava antes de ele começar.
+     *
+     * **Nulo quando não há nenhum rodando.** O que terminou não volta aqui: ele
+     * não tem resultado a mostrar, porque arte que faltou cai na rede de
+     * segurança do caminho sob demanda.
+     */
+    enriching: JobSchema.nullable(),
+    /**
+     * A varredura de atualização desta pessoa (item 11c), **rodando ou já
+     * terminada**.
+     *
+     * Ao contrário de `enriching`, ela não some ao acabar: o número de obras
+     * que mudaram de total é o resultado do gesto, e é o que a pessoa apertou o
+     * botão para saber. `updated` carrega esse número.
+     */
+    refreshing: JobSchema.nullable(),
   })
   .openapi('ImportStatus')
 

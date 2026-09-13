@@ -372,6 +372,20 @@
       "when": 1789451307551,
       "tag": "0052_update_check",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "6",
+      "when": 1789537707551,
+      "tag": "0053_enrich_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "6",
+      "when": 1789624107551,
+      "tag": "0054_refresh_jobs",
+      "breakpoints": true
     }
   ]
 }

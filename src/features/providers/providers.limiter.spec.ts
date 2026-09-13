@@ -140,3 +140,65 @@ describe('`awaitToken`, que é o que a arte chama', () => {
     expect(await awaitToken('p', { perSecond: 100, burst: 2 }, 0)).toBe(true)
   })
 })
+
+/**
+ * A PRECEDÊNCIA do trabalho de fundo — 13/09/2026.
+ *
+ * O que estes testes protegem é a diferença entre "há fichas" e "há fichas
+ * SOBRANDO": o aquecimento (`art.warm.ts`) roda por minutos e chega sempre
+ * primeiro, então sem colchão ele esvazia o balde justo quando alguém abre a
+ * grade. Medido antes do conserto: uma grade fria de 20 cartas caía de 7
+ * servidas para 2 no AniList.
+ */
+describe('o trabalho de fundo cede a vez', () => {
+  it('deixa um colchão que o primeiro plano encontra cheio', () => {
+    // burst 5, metade reservada: o fundo só debita enquanto sobrarem 2,5.
+    const teto = { perSecond: 0, burst: 5 }
+
+    // Ele consome até o piso e para — sem reenchimento (`perSecond: 0`), o que
+    // isola a regra do colchão da aritmética do tempo.
+    let pegas = 0
+    for (let i = 0; i < 10; i += 1) {
+      if (reserveToken('bg', 0, teto, 0, true) === 0) {
+        pegas += 1
+      }
+    }
+    expect(pegas).toBe(2)
+
+    // E o que sobrou continua lá para quem tem alguém esperando.
+    expect(reserveToken('bg', 0, teto, 0, false)).toBe(0)
+    expect(reserveToken('bg', 0, teto, 0, false)).toBe(0)
+  })
+
+  /**
+   * A outra metade da precedência, e a que não se vê olhando só o colchão: o
+   * primeiro plano **reserva** ficha do futuro, o fundo não. Sem isso, mil obras
+   * enfileirariam mil fichas na frente de quem abriu a grade.
+   */
+  it('não gasta ficha do futuro, enquanto o primeiro plano gasta', () => {
+    const teto = { perSecond: 1, burst: 1 }
+
+    // Gasta a única ficha disponível.
+    expect(reserveToken('futuro', 0, teto, 0, false)).toBe(0)
+
+    // O primeiro plano aceita esperar e SAI com a ficha debitada (espera > 0).
+    expect(reserveToken('futuro', 0, teto, 5000, false)).toBeGreaterThan(0)
+
+    // O de fundo também recebe quanto esperar — mas não debitou, e é isso que
+    // deixa a ficha disponível para quem chegar com pressa no meio da espera.
+    const antes = reserveToken('futuro', 0, teto, 60_000, true)
+    expect(antes).toBeGreaterThan(0)
+    const depois = reserveToken('futuro', 0, teto, 60_000, true)
+    expect(depois).toBe(antes)
+  })
+
+  it('quem tem alguém esperando não paga o colchão', () => {
+    const teto = { perSecond: 0, burst: 5 }
+
+    // As cinco saem, porque o piso do primeiro plano é zero.
+    for (let i = 0; i < 5; i += 1) {
+      expect(reserveToken('fg', 0, teto, 0, false)).toBe(0)
+    }
+    expect(reserveToken('fg', 0, teto, 0, false)).toBeNull()
+  })
+})
