@@ -44,7 +44,8 @@ export const MAX_STORED_PROBLEMS = 100
 
 export function start(input: {
   userId: number
-  source: ImportSourceSlug
+  /** Nula na varredura, que não vem de fonte nenhuma. */
+  source: ImportSourceSlug | null
   mode: ImportMode
   /** `import` por omissão — o `enrich` é criado pelo runner ao fechar aquele. */
   kind?: JobKind
@@ -81,12 +82,15 @@ export function running(kind: JobKind): Job | undefined {
     .get()
 }
 
-/** O aquecimento mais recente desta pessoa, rodando ou não. */
-export function latestEnrichFor(userId: number): Job | undefined {
+/** O trabalho mais recente de um tipo, desta pessoa — rodando ou não. */
+export function latestOfKindFor(
+  userId: number,
+  kind: JobKind,
+): Job | undefined {
   return db
     .select()
     .from(importJobs)
-    .where(and(eq(importJobs.userId, userId), eq(importJobs.kind, 'enrich')))
+    .where(and(eq(importJobs.userId, userId), eq(importJobs.kind, kind)))
     .orderBy(desc(importJobs.startedAt), desc(importJobs.id))
     .get()
 }

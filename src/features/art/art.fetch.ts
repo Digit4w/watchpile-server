@@ -59,6 +59,7 @@ export async function fetchArt({
   externalId,
   waitForTokenMs,
   background = false,
+  fresh = false,
   fetchImpl = fetch,
 }: {
   provider: ProviderRow
@@ -72,6 +73,8 @@ export async function fetchArt({
   waitForTokenMs?: number
   /** Ver `fetchDetail`: o aquecimento respeita o colchão do primeiro plano. */
   background?: boolean
+  /** Ver `fetchDetail`: o `Refresh` ignora o cache de 6h e vai à rede. */
+  fresh?: boolean
   /** Injetável só para teste; produção usa o `fetch` global do Node. */
   fetchImpl?: typeof fetch
 }): Promise<ArtOutcome> {
@@ -104,6 +107,7 @@ export async function fetchArt({
      */
     waitForTokenMs: waitForTokenMs ?? TOKEN_WAIT_MS,
     background,
+    fresh,
     fetchImpl,
   })
 

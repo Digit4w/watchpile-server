@@ -164,7 +164,8 @@ export const status: AppRouteHandler<StatusRoute> = (c) => {
    * o que ele impede é de todo mundo; este é um trabalho sobre a biblioteca de
    * quem importou, e é só a ela que o número diz alguma coisa.
    */
-  const enriching = jobs.latestEnrichFor(user.id)
+  const enriching = jobs.latestOfKindFor(user.id, 'enrich')
+  const refreshing = jobs.latestOfKindFor(user.id, 'refresh')
 
   return c.json(
     {
@@ -173,6 +174,14 @@ export const status: AppRouteHandler<StatusRoute> = (c) => {
       mine: running?.userId === user.id,
       latest: latest ? toPublic(latest) : null,
       enriching: enriching?.status === 'running' ? toPublic(enriching) : null,
+      /**
+       * A varredura aparece **mesmo terminada**, ao contrário do aquecimento.
+       * A diferença é que ela tem RESULTADO: quantas obras mudaram de total é o
+       * que a pessoa apertou o botão para saber, e sumir ao acabar deixaria o
+       * gesto sem resposta. O aquecimento não tem o que mostrar depois, porque
+       * a arte que faltar cai no caminho sob demanda.
+       */
+      refreshing: refreshing ? toPublic(refreshing) : null,
     },
     200,
   )

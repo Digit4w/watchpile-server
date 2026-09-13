@@ -45,8 +45,9 @@ const JobSchema = z
      * dois contadores**, porque *número que soma dois motivos não confere nada*
      * (design system, seção 8).
      */
-    kind: z.enum(['import', 'enrich']),
-    source: z.enum(IMPORT_SOURCES),
+    kind: z.enum(['import', 'enrich', 'refresh']),
+    /** Nula na varredura: ela não vem de fonte nenhuma. Ver o schema. */
+    source: z.enum(IMPORT_SOURCES).nullable(),
     mode: z.enum(['skip', 'overwrite']),
     status: z.enum(['running', 'done', 'failed', 'cancelled']),
     /**
@@ -155,6 +156,15 @@ const StatusSchema = z
      * segurança do caminho sob demanda.
      */
     enriching: JobSchema.nullable(),
+    /**
+     * A varredura de atualização desta pessoa (item 11c), **rodando ou já
+     * terminada**.
+     *
+     * Ao contrário de `enriching`, ela não some ao acabar: o número de obras
+     * que mudaram de total é o resultado do gesto, e é o que a pessoa apertou o
+     * botão para saber. `updated` carrega esse número.
+     */
+    refreshing: JobSchema.nullable(),
   })
   .openapi('ImportStatus')
 

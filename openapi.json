@@ -157,6 +157,27 @@
         },
         "required": ["deleted"]
       },
+      "RefreshResult": {
+        "type": "object",
+        "properties": {
+          "updated": {
+            "type": "integer"
+          }
+        },
+        "required": ["updated"]
+      },
+      "RefreshStarted": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "required": ["id", "total"]
+      },
       "ImportStatus": {
         "type": "object",
         "properties": {
@@ -177,9 +198,19 @@
           },
           "enriching": {
             "$ref": "#/components/schemas/ImportJob"
+          },
+          "refreshing": {
+            "$ref": "#/components/schemas/ImportJob"
           }
         },
-        "required": ["sources", "running", "mine", "latest", "enriching"]
+        "required": [
+          "sources",
+          "running",
+          "mine",
+          "latest",
+          "enriching",
+          "refreshing"
+        ]
       },
       "ImportSource": {
         "type": "object",
@@ -208,11 +239,12 @@
           },
           "kind": {
             "type": "string",
-            "enum": ["import", "enrich"]
+            "enum": ["import", "enrich", "refresh"]
           },
           "source": {
             "type": "string",
-            "enum": ["anilist", "mal", "csv"]
+            "nullable": true,
+            "enum": ["anilist", "mal", "csv", null]
           },
           "mode": {
             "type": "string",
@@ -3465,6 +3497,132 @@
                     }
                   },
                   "required": ["message", "reason"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/entries/{id}/refresh": {
+      "post": {
+        "tags": ["Entries"],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "exclusiveMinimum": true
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The provider was read again, and this is what changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such title, or it has no provider link to refresh from",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/entries/refresh": {
+      "post": {
+        "tags": ["Entries"],
+        "responses": {
+          "202": {
+            "description": "The sweep started, and this is the job to watch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshStarted"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A sweep is already running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Nothing in this library is linked to a provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
                 }
               }
             }

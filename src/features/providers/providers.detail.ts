@@ -50,6 +50,7 @@ export async function fetchDetail({
   pathOverride = null,
   waitForTokenMs = 0,
   background = false,
+  fresh = false,
   fetchImpl = fetch,
 }: {
   provider: ProviderRow
@@ -92,6 +93,19 @@ export async function fetchDetail({
    * dois se separam.
    */
   background?: boolean
+  /**
+   * Ignora o que estiver no `provider_cache` e vai à rede — 13/09/2026.
+   *
+   * **Quem pede isso é o `Refresh`**, e sem ele o botão mentiria: o cache tem
+   * validade de 6h, então clicar "atualizar" dentro dessa janela devolveria
+   * exatamente o que já estava na tela. Um controle que a pessoa aperta de
+   * propósito não pode responder com a resposta velha.
+   *
+   * **Ele pula a LEITURA, nunca a escrita.** O que voltar continua enchendo o
+   * cache — seria perverso gastar a ida à rede e deixar o próximo pedido
+   * pagá-la de novo.
+   */
+  fresh?: boolean
   /** Injetável só para teste; produção usa o `fetch` global do Node. */
   fetchImpl?: typeof fetch
 }): Promise<DetailOutcome> {
@@ -146,7 +160,7 @@ export async function fetchDetail({
     provider.auth.style === 'query-key' ? provider.auth.param : null
   const key = cacheKeyFor(prepared.request.url, keyParam, prepared.request.body)
 
-  const cached = readCache(provider.slug, key)
+  const cached = fresh ? null : readCache(provider.slug, key)
   if (cached !== null) {
     try {
       return { ok: true, body: JSON.parse(cached), cached: true }

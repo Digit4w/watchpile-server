@@ -430,7 +430,7 @@ describe('o enriquecimento é a segunda fase, e tem contador próprio', () => {
     expect(importado?.kind).toBe('import')
     expect(importado?.status).toBe('done')
 
-    const enrich = jobs.latestEnrichFor(userId)
+    const enrich = jobs.latestOfKindFor(userId, 'enrich')
     expect(enrich).toBeDefined()
     expect(enrich?.id).not.toBe(job.id)
     expect(enrich?.kind).toBe('enrich')
@@ -463,7 +463,7 @@ describe('o enriquecimento é a segunda fase, e tem contador próprio', () => {
     const primeiro = jobs.start({ userId, source: 'anilist', mode: 'skip' })
     await run(primeiro.id, fonte([item(1)]), adiciona, 'skip')
 
-    const enrich = jobs.latestEnrichFor(userId)
+    const enrich = jobs.latestOfKindFor(userId, 'enrich')
     expect(enrich?.status).toBe('running')
 
     // Com o índice antigo, esta linha lançaria por constraint.
@@ -480,7 +480,7 @@ describe('o enriquecimento é a segunda fase, e tem contador próprio', () => {
     const semVinculo: ImportItem = { ...item(1), links: [] }
     await run(job.id, fonte([semVinculo]), adiciona, 'skip')
 
-    expect(jobs.latestEnrichFor(userId)).toBeUndefined()
+    expect(jobs.latestOfKindFor(userId, 'enrich')).toBeUndefined()
   })
 
   /** Cancelar o import não pode deixar um aquecimento órfão para trás. */
@@ -493,6 +493,6 @@ describe('o enriquecimento é a segunda fase, e tem contador próprio', () => {
     await run(job.id, fonte(items), adiciona, 'skip')
 
     expect(jobs.byId(job.id)?.status).toBe('cancelled')
-    expect(jobs.latestEnrichFor(userId)).toBeUndefined()
+    expect(jobs.latestOfKindFor(userId, 'enrich')).toBeUndefined()
   })
 })

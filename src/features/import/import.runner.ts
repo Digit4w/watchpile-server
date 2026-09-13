@@ -1,6 +1,7 @@
 import { setImmediate as yieldToLoop } from 'node:timers/promises'
 import { type ArtTarget, warmArt } from '../art/art.warm.js'
 import * as notifications from '../notifications/notifications.store.js'
+import { refreshTitles } from '../titles/titles.refresh.js'
 import * as jobs from './import.jobs.js'
 import {
   type ApplyItem,
@@ -115,6 +116,91 @@ export async function run(
   } finally {
     aliveHere.delete(jobId)
   }
+}
+
+/**
+ * A VARREDURA: reler o provedor para a biblioteca inteira — 13/09/2026,
+ * item 11(c) da fila do dono.
+ *
+ * ── Sob demanda, e por que isso NÃO fura o brief 3.1 ────────────────────────
+ * A 3.1 recusa infraestrutura de fila, e o argumento que deixou o aquecimento
+ * passar foi ser um laço sem estado que termina sozinho. Este tem estado — a
+ * linha do job —, e mesmo assim não é fila: **não há agenda, não há retentativa,
+ * não há trabalho esperando para ser pego**. Quem o dispara é um gesto, e ele
+ * morre quando acaba.
+ *
+ * **O cron interno vem depois** (decisão do dono, 13/09/2026), e é ele que vai
+ * pedir a conversa sobre a 3.1. O que este ciclo deixa pronto para ele é o
+ * corte por idade em `refreshTargets` — ver aquele módulo.
+ *
+ * ── Ele é `enrich` com outra pergunta, e por isso não é `enrich` ────────────
+ * Mesmo percurso, mesma peça (`warmArt`), `kind` diferente. O índice único por
+ * tipo deixa os dois coexistirem: recusar a varredura que alguém pediu porque
+ * um aquecimento automático ainda roda seria o gesto perdendo para o efeito
+ * colateral.
+ */
+export function startRefresh(
+  userId: number,
+  targets: readonly ArtTarget[],
+): jobs.Job | null {
+  if (targets.length === 0) {
+    return null
+  }
+
+  let job: jobs.Job
+  try {
+    job = jobs.start({
+      userId,
+      /** Nula: uma varredura relê vários provedores, não uma fonte. */
+      source: null,
+      /**
+       * `mode` não diz nada aqui — não há colisão a resolver, porque nada
+       * entra. Fica no valor que não promete escrita destrutiva.
+       */
+      mode: 'skip',
+      kind: 'refresh',
+    })
+  } catch (error) {
+    // Já há uma varredura rodando: o índice único recusou, e isso é a resposta.
+    console.warn('[refresh] job not started for user %d', userId, error)
+    return null
+  }
+
+  aliveHere.add(job.id)
+
+  void refreshTitles(targets, {
+    progress: {
+      begin: (total) => jobs.setTotal(job.id, total),
+      tick: (done) => jobs.setProcessed(job.id, done),
+      cancelled: () => jobs.cancelRequested(job.id),
+    },
+  })
+    .then((updated) => {
+      /**
+       * **Quantas obras mudaram de total vai em `updated`**, que é a coluna que
+       * já existe com esse nome e esse significado no import. Reusar é o que
+       * deixa a tela ler os dois trabalhos com a mesma peça.
+       */
+      jobs.addProgress(job.id, {
+        processed: 0,
+        added: 0,
+        skipped: 0,
+        updated,
+        unmatched: 0,
+      })
+      jobs.finish(job.id, {
+        status: jobs.cancelRequested(job.id) ? 'cancelled' : 'done',
+      })
+    })
+    .catch((error: unknown) => {
+      console.error('[refresh] job %d failed', job.id, error)
+      jobs.finish(job.id, { status: 'failed', errorKind: 'unexpected' })
+    })
+    .finally(() => {
+      aliveHere.delete(job.id)
+    })
+
+  return job
 }
 
 /**
@@ -290,7 +376,13 @@ function notifyFinished(jobId: number): void {
     severity: 'info',
     kind: 'import-finished',
     params: {
-      source: job.source,
+      /**
+       * **Só o `import` notifica**, e ele sempre tem fonte — `source` só é nula
+       * na varredura (`0054`), que não emite notificação nenhuma. O `??` é a
+       * rede para o dia em que isso deixar de ser verdade: uma frase com a
+       * palavra errada é melhor que uma notificação que não nasce.
+       */
+      source: job.source ?? 'csv',
       added: job.added,
       problemCount: job.problemCount,
     },
@@ -311,7 +403,7 @@ function notifyFailed(jobId: number, reason: string): void {
     userId: job.userId,
     severity: 'warning',
     kind: 'import-failed',
-    params: { source: job.source, reason },
+    params: { source: job.source ?? 'csv', reason },
   })
 }
 

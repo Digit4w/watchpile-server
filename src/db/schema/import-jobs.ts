@@ -107,13 +107,25 @@ export const importJobs = sqliteTable(
      * um import que deu certo) e cairia na régua de *número que soma dois
      * motivos não confere nada*.
      *
+     * **`refresh` é o terceiro, e não é `enrich` com um parâmetro** — 13/09/2026.
+     * Eles percorrem o mesmo caminho, e é por isso que compartilham `warmArt`;
+     * o que difere é a PERGUNTA: aquecer é *"o que falta?"* e roda atrás de um
+     * import, refrescar é *"o que mudou?"* e roda porque alguém pediu. A tela
+     * diz coisas diferentes sobre cada um, e o índice único por tipo deixa os
+     * dois coexistirem — recusar a varredura que alguém pediu porque um
+     * aquecimento automático ainda não acabou seria o gesto perdendo para o
+     * efeito colateral.
+     *
+     * **Sem migration:** o enum do Drizzle é tipagem, e a `0053` criou a coluna
+     * sem `CHECK`. Um valor novo não muda o banco.
+     *
      * O `enrich` herda a tabela inteira em vez de ganhar a sua: `status`,
      * `total`, `processed`, o carimbo de cancelamento e a reconciliação de
      * zumbi já existem aqui, e uma segunda tabela copiaria as seis colunas e as
      * duas regras. O nome `import_jobs` fica mais estreito que o conteúdo, e
      * isso é dívida de NOME — barata perto de manter dois esquemas em paralelo.
      */
-    kind: text('kind', { enum: ['import', 'enrich'] })
+    kind: text('kind', { enum: ['import', 'enrich', 'refresh'] })
       .notNull()
       .default('import'),
 
@@ -123,8 +135,13 @@ export const importJobs = sqliteTable(
      * No `enrich` ela é a fonte do import que o originou, e serve de
      * procedência: é o que deixa a tela dizer de qual importação aquele
      * aquecimento veio.
+     *
+     * **Nula no `refresh`** (`0054`), e a nulidade é o dado certo: uma
+     * varredura relê os provedores que as obras já apontam — vários dentro do
+     * mesmo job —, então não há uma fonte. Escolher um valor do enum para
+     * satisfazer um `NOT NULL` seria mentira plausível no banco.
      */
-    source: text('source', { enum: ['anilist', 'mal', 'csv'] }).notNull(),
+    source: text('source', { enum: ['anilist', 'mal', 'csv'] }),
 
     /** O que fazer com a obra que já está na biblioteca. */
     mode: text('mode', { enum: ['skip', 'overwrite'] }).notNull(),

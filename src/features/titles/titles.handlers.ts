@@ -3,14 +3,22 @@ import { db } from '../../db/client.js'
 import { entries } from '../../db/schema/entries.js'
 import type { AppRouteHandler } from '../../lib/types.js'
 import { sourceOf } from '../entries/entries.source.js'
+import { startRefresh } from '../import/import.runner.js'
 import { bindingFor, providerBySlug } from '../providers/providers.query.js'
 import { fetchUnits } from '../providers/providers.units.js'
+import {
+  refreshTargets,
+  refreshTitles,
+  targetsForEntry,
+} from './titles.refresh.js'
 import { type ResolveOutcome, resolveTitle } from './titles.resolve.js'
 import type {
   GetEntryDetailsRoute,
   GetEntryUnitsRoute,
   GetProviderTitleRoute,
   GetProviderUnitsRoute,
+  RefreshEntryRoute,
+  RefreshLibraryRoute,
 } from './titles.routes.js'
 
 /**
@@ -232,4 +240,65 @@ export const getEntryUnits: AppRouteHandler<GetEntryUnitsRoute> = async (c) => {
     group,
   )
   return c.json(body as never, status)
+}
+
+/**
+ * Reler o provedor para uma obra — item 11(d) da fila do dono.
+ *
+ * **A recusa é 404 e não distingue os três casos** — obra inexistente, de outra
+ * pessoa, e sem vínculo respondem igual, pelo mesmo motivo de `getEntryUnits`
+ * logo acima: separar contaria o acervo alheio por tentativa.
+ */
+export const refreshEntry: AppRouteHandler<RefreshEntryRoute> = async (c) => {
+  const user = c.get('user')
+  if (!user) {
+    return c.json({ message: 'No active session' }, 401)
+  }
+
+  const { id } = c.req.valid('param')
+  const targets = targetsForEntry(id, user.id)
+
+  if (targets.length === 0) {
+    return c.json({ message: 'Nothing to refresh' }, 404)
+  }
+
+  /**
+   * **Esperado, ao contrário do aquecimento.** É uma obra e quem clicou está
+   * olhando: responder antes de terminar devolveria um número que ainda não é
+   * verdade, e a tela teria de perguntar de novo pra saber o que mudou.
+   */
+  const updated = await refreshTitles(targets)
+
+  return c.json({ updated }, 200)
+}
+
+/**
+ * A varredura da biblioteca — item 11(c).
+ *
+ * **Dispara e responde**, sem `await`: mil obras levam dezenas de minutos, e a
+ * requisição não espera isso. O progresso sai por `GET /api/import/status`,
+ * que é a peça que já conta o import e o aquecimento.
+ */
+export const refreshLibrary: AppRouteHandler<RefreshLibraryRoute> = (c) => {
+  const user = c.get('user')
+  if (!user) {
+    return c.json({ message: 'No active session' }, 401)
+  }
+
+  const targets = refreshTargets(user.id)
+  if (targets.length === 0) {
+    /**
+     * **422 e não 404**: a biblioteca existe, e a rota também — o que falta é
+     * obra com vínculo de onde reler. A tela desabilita o botão antes disso, e
+     * esta é a recusa para quem chamou a rota direto.
+     */
+    return c.json({ message: 'Nothing to refresh' }, 422)
+  }
+
+  const job = startRefresh(user.id, targets)
+  if (!job) {
+    return c.json({ message: 'A refresh is already running' }, 409)
+  }
+
+  return c.json({ id: job.id, total: targets.length }, 202)
 }

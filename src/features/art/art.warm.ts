@@ -122,6 +122,35 @@ export type WarmProgress = {
   cancelled?: () => boolean
 }
 
+/**
+ * O que muda quando o trabalho é um `Refresh` pedido por alguém — 13/09/2026.
+ *
+ * Aquecer e refrescar são o MESMO percurso com duas perguntas diferentes:
+ * aquecer é *"o que falta?"*, refrescar é *"o que mudou?"*. Um segundo módulo
+ * copiaria o laço, o tratamento de falha por obra, a pausa e a cessão do event
+ * loop para trocar duas condições — e é assim que a segunda cópia diverge.
+ */
+export type WarmMode = {
+  /**
+   * Reprocessa mesmo quem já tem arte e snapshot.
+   *
+   * Sem isto o `Refresh` não faria **nada**: o laço pula a obra completa, que é
+   * exatamente a obra que alguém mandou atualizar.
+   */
+  force?: boolean
+  /** Ignora o cache de resposta de 6h. Ver `fetchDetail`. */
+  fresh?: boolean
+  /**
+   * Chamado quando o provedor respondeu, com o que ele disse.
+   *
+   * É por aqui que o total novo alcança a biblioteca, e **quem decide o que
+   * fazer com ele não é este módulo**: o snapshot é linha da INSTALAÇÃO (a
+   * chave não tem dono) e `entries` é do usuário, então escrever numa a partir
+   * da outra é decisão de quem chamou.
+   */
+  onCaptured?: (target: ArtTarget) => void
+}
+
 export async function warmArt(
   targets: readonly ArtTarget[],
   /**
@@ -131,6 +160,7 @@ export async function warmArt(
    */
   fetchImpl?: typeof fetch,
   progress?: WarmProgress,
+  mode: WarmMode = {},
 ): Promise<number> {
   if (!env.WATCHPILE_ART_CACHE) {
     return 0
@@ -178,7 +208,12 @@ export async function warmArt(
       )
       const needsSnapshot = !hasSnapshot(target)
 
-      if (!needsArt && !needsSnapshot) {
+      /**
+       * **No `Refresh` não há o que pular.** A obra completa é justamente a que
+       * alguém mandou atualizar; a condição abaixo existe para o aquecimento,
+       * onde repetir trabalho feito gastaria cota de todo mundo por nada.
+       */
+      if (!mode.force && !needsArt && !needsSnapshot) {
         continue
       }
 
@@ -201,22 +236,24 @@ export async function warmArt(
        * o container por causa de um pôster.
        */
       try {
-        const fetched = needsArt
-          ? await fetchArt({
-              provider,
-              binding,
-              externalId: target.externalId,
-              waitForTokenMs: TOKEN_WAIT_MS,
-              /**
-               * **Este trabalho cede a vez, e é o ponto do ciclo de 13/09.**
-               * Medido: no AniList (0,5/s) o aquecimento derrubava uma grade
-               * fria de 20 cartas de 7 servidas para 2, porque os dois pediam
-               * do mesmo balde sem precedência.
-               */
-              background: true,
-              fetchImpl,
-            })
-          : null
+        const fetched =
+          needsArt || mode.force
+            ? await fetchArt({
+                provider,
+                binding,
+                externalId: target.externalId,
+                waitForTokenMs: TOKEN_WAIT_MS,
+                /**
+                 * **Este trabalho cede a vez, e é o ponto do ciclo de 13/09.**
+                 * Medido: no AniList (0,5/s) o aquecimento derrubava uma grade
+                 * fria de 20 cartas de 7 servidas para 2, porque os dois pediam
+                 * do mesmo balde sem precedência.
+                 */
+                background: true,
+                fresh: mode.fresh,
+                fetchImpl,
+              })
+            : null
 
         /**
          * **O snapshot vem DEPOIS da arte, e é de graça quando ela veio.** As
@@ -225,7 +262,7 @@ export async function warmArt(
          * aí sim é uma ida à rede, que é a única forma de saber o que o provedor
          * diz.
          */
-        if (needsSnapshot) {
+        if (needsSnapshot || mode.force) {
           await captureSnapshot({
             provider,
             binding,
@@ -233,8 +270,10 @@ export async function warmArt(
             mediaType: target.mediaType,
             waitForTokenMs: TOKEN_WAIT_MS,
             background: true,
+            fresh: mode.fresh,
             fetchImpl,
           })
+          mode.onCaptured?.(target)
         }
 
         if (fetched?.ok) {
