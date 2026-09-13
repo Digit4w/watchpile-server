@@ -151,45 +151,71 @@ describe('`awaitToken`, que é o que a arte chama', () => {
  * servidas para 2 no AniList.
  */
 describe('o trabalho de fundo cede a vez', () => {
+  /**
+   * A regra que ficou: o de fundo para antes de esvaziar o balde, e o que
+   * sobra é o que a tela encontra pronto ao abrir uma grade fria.
+   *
+   * O teste deriva o colchão do BURST em vez de cravar um número — o valor da
+   * reserva foi recalibrado em 13/09/2026 (0,5 → 0,2) depois de medir o custo
+   * dele, e um teste contra o número antigo teria quebrado sem que a regra
+   * tivesse mudado.
+   */
   it('deixa um colchão que o primeiro plano encontra cheio', () => {
-    // burst 5, metade reservada: o fundo só debita enquanto sobrarem 2,5.
-    const teto = { perSecond: 0, burst: 5 }
+    // `perSecond: 0` isola a regra do colchão da aritmética do tempo.
+    const teto = { perSecond: 0, burst: 10 }
 
-    // Ele consome até o piso e para — sem reenchimento (`perSecond: 0`), o que
-    // isola a regra do colchão da aritmética do tempo.
-    let pegas = 0
-    for (let i = 0; i < 10; i += 1) {
+    let doFundo = 0
+    for (let i = 0; i < 20; i += 1) {
       if (reserveToken('bg', 0, teto, 0, true) === 0) {
-        pegas += 1
+        doFundo += 1
       }
     }
-    expect(pegas).toBe(2)
 
-    // E o que sobrou continua lá para quem tem alguém esperando.
-    expect(reserveToken('bg', 0, teto, 0, false)).toBe(0)
-    expect(reserveToken('bg', 0, teto, 0, false)).toBe(0)
+    // Ele para antes do fim, e o que sobra não é zero.
+    expect(doFundo).toBeGreaterThan(0)
+    expect(doFundo).toBeLessThan(teto.burst)
+
+    // E o que sobrou é servido a quem tem alguém esperando.
+    const sobra = teto.burst - doFundo
+    for (let i = 0; i < sobra; i += 1) {
+      expect(reserveToken('bg', 0, teto, 0, false)).toBe(0)
+    }
+    expect(reserveToken('bg', 0, teto, 0, false)).toBeNull()
   })
 
   /**
-   * A outra metade da precedência, e a que não se vê olhando só o colchão: o
-   * primeiro plano **reserva** ficha do futuro, o fundo não. Sem isso, mil obras
-   * enfileirariam mil fichas na frente de quem abriu a grade.
+   * **O de fundo DEBITA**, e isso é o que mantém o teto do provedor de pé.
+   *
+   * A versão anterior o fazia dormir sem debitar e tentar de novo; o laço de
+   * retry saiu em 13/09/2026, e sem o débito ele passaria a pedir sem limite
+   * nenhum — que é o defeito oposto ao que o colchão veio evitar.
    */
-  it('não gasta ficha do futuro, enquanto o primeiro plano gasta', () => {
-    const teto = { perSecond: 1, burst: 1 }
+  it('gasta a ficha que pegou, como todo mundo', () => {
+    const teto = { perSecond: 0, burst: 10 }
 
-    // Gasta a única ficha disponível.
-    expect(reserveToken('futuro', 0, teto, 0, false)).toBe(0)
+    /**
+     * **O teste conta o TOTAL que o balde entrega**, e é isso que distingue as
+     * duas implementações: se o de fundo não debitasse, o balde entregaria as
+     * fichas dele *além* das dez — e a primeira versão deste teste passava nos
+     * dois casos porque só olhava o resto, que continua menor que o burst de um
+     * jeito ou de outro.
+     */
+    let doFundo = 0
+    while (reserveToken('debita', 0, teto, 0, true) === 0) {
+      doFundo += 1
+      if (doFundo > 50)
+        throw new Error('o de fundo não debita: balde sem fundo')
+    }
 
-    // O primeiro plano aceita esperar e SAI com a ficha debitada (espera > 0).
-    expect(reserveToken('futuro', 0, teto, 5000, false)).toBeGreaterThan(0)
+    let doPrimeiroPlano = 0
+    while (reserveToken('debita', 0, teto, 0, false) === 0) {
+      doPrimeiroPlano += 1
+      if (doPrimeiroPlano > 50) throw new Error('balde sem fundo')
+    }
 
-    // O de fundo também recebe quanto esperar — mas não debitou, e é isso que
-    // deixa a ficha disponível para quem chegar com pressa no meio da espera.
-    const antes = reserveToken('futuro', 0, teto, 60_000, true)
-    expect(antes).toBeGreaterThan(0)
-    const depois = reserveToken('futuro', 0, teto, 60_000, true)
-    expect(depois).toBe(antes)
+    // As duas metades somam o burst, nem uma ficha a mais.
+    expect(doFundo + doPrimeiroPlano).toBe(teto.burst)
+    expect(doFundo).toBeGreaterThan(0)
   })
 
   it('quem tem alguém esperando não paga o colchão', () => {

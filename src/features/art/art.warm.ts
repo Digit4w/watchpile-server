@@ -270,7 +270,23 @@ export async function warmArt(
             mediaType: target.mediaType,
             waitForTokenMs: TOKEN_WAIT_MS,
             background: true,
-            fresh: mode.fresh,
+            /**
+             * **`fresh` só quando a arte NÃO foi buscada agora** — 13/09/2026.
+             *
+             * As duas chamadas leem o MESMO detalhe, e a de cima acabou de
+             * encher o `provider_cache` com a resposta nova. Repetir `fresh`
+             * aqui jogaria fora exatamente o que ela trouxe: uma segunda ida à
+             * rede e uma segunda ficha do limitador, por obra.
+             *
+             * Medido antes do conserto: a varredura andava a **0,47 obras/s**
+             * contra um teto de 3/s, e cada obra custava 2,1s — sendo que o
+             * detalhe do provedor leva 0,37s e a imagem outros 0,37s. O que
+             * sobrava era a segunda busca, paga por nada.
+             *
+             * Quando só o snapshot falta, aí `fresh` volta a valer: não houve
+             * primeira busca para reaproveitar.
+             */
+            fresh: mode.fresh && !fetched,
             fetchImpl,
           })
           mode.onCaptured?.(target)
