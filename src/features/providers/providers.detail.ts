@@ -49,6 +49,7 @@ export async function fetchDetail({
   externalId,
   pathOverride = null,
   waitForTokenMs = 0,
+  background = false,
   fetchImpl = fetch,
 }: {
   provider: ProviderRow
@@ -82,6 +83,15 @@ export async function fetchDetail({
    * consulta; um `<img>` não tem tecla seguinte.
    */
   waitForTokenMs?: number
+  /**
+   * Este pedido é de trabalho de FUNDO — o aquecimento, que roda sem ninguém
+   * esperando (`art.warm.ts`). Ver `reserveToken`: ele deixa um colchão de
+   * fichas intocado para quem tem uma tela aberta, e nunca gasta ficha do
+   * futuro. **Declarado por quem chama, nunca deduzido do prazo** — prazo longo
+   * é um PROXY de "ninguém está esperando", e proxy acerta até o caso em que os
+   * dois se separam.
+   */
+  background?: boolean
   /** Injetável só para teste; produção usa o `fetch` global do Node. */
   fetchImpl?: typeof fetch
 }): Promise<DetailOutcome> {
@@ -145,7 +155,14 @@ export async function fetchDetail({
     }
   }
 
-  if (!(await awaitToken(provider.slug, provider.rateLimit, waitForTokenMs))) {
+  if (
+    !(await awaitToken(
+      provider.slug,
+      provider.rateLimit,
+      waitForTokenMs,
+      background,
+    ))
+  ) {
     return { ok: false, reason: 'rate-limited' }
   }
 
