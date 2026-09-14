@@ -6,6 +6,7 @@ import { db } from '../../db/client.js'
 import { sessions } from '../../db/schema/sessions.js'
 import { settings } from '../../db/schema/settings.js'
 import { users } from '../../db/schema/users.js'
+import { registerSecret } from '../../lib/log-redact.js'
 import type { AuthUser } from './auth.entity.js'
 
 export const SESSION_COOKIE = 'watchpile_session'
@@ -21,12 +22,16 @@ function getSessionSecret(): string {
   const existing = db.select().from(settings).where(eq(settings.id, 1)).get()
   if (existing) {
     cachedSecret = existing.sessionSecret
+    // Quem tem o segredo assina cookie de qualquer usuário. Ele não tem motivo
+    // pra aparecer numa linha de log, e se aparecer sai raspado.
+    registerSecret(cachedSecret)
     return cachedSecret
   }
 
   const secret = randomBytes(32).toString('hex')
   db.insert(settings).values({ id: 1, sessionSecret: secret }).run()
   cachedSecret = secret
+  registerSecret(secret)
   return secret
 }
 

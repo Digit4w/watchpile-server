@@ -18,6 +18,11 @@ client-dist/*
 data/art/
 data/art-test/
 
+# log em arquivo, com rotação (`lib/log-rotation.ts`). O `*.log` abaixo já cobre
+# os arquivos; as pastas entram pra que o diretório vazio também fique de fora.
+data/logs/
+data/logs-test/
+
 .env
 .env.local
 

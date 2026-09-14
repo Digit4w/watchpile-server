@@ -5,6 +5,7 @@ import {
   intendedBind,
   rememberBound,
 } from './features/network/network.store.js'
+import { logger } from './lib/logger.js'
 
 export type Listening = {
   port: number
@@ -39,5 +40,7 @@ const isMainModule = import.meta.url === `file://${process.argv[1]}`
 
 if (isMainModule) {
   const { port, host } = await startServer()
-  console.log(`Watchpile server listening on ${host}:${port}`)
+  // Pelo logger e não por `console.log`: é a primeira linha de cada boot, e é
+  // ela que separa um restart do outro quando alguém lê o arquivo.
+  logger.info({ host, port }, 'Watchpile server listening')
 }

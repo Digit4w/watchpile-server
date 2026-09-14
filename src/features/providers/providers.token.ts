@@ -1,3 +1,5 @@
+import { registerSecret } from '../../lib/log-redact.js'
+
 /**
  * O token de um provedor `oauth-client-credentials`, guardado até perto de
  * vencer.
@@ -123,6 +125,9 @@ export async function tokenFor({
      */
     return { ok: false, reason: 'refused', status: 200 }
   }
+
+  // O token é derivado do secret e vale o mesmo que ele por dois meses.
+  registerSecret(token)
 
   /**
    * `expires_in` vem em SEGUNDOS. Sem ele — provedor que não anuncia validade —

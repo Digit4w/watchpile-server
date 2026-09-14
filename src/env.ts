@@ -68,12 +68,22 @@ const EnvSchema = z
       .enum(['true', 'false'])
       .default('true')
       .transform((value) => value === 'true'),
+    // O log em arquivo (14/09/2026). Mesma forma do cache de arte: sem padrão
+    // próprio, ele deriva do banco e cai em `/data/logs` no Docker e no
+    // `userData` do Electron. O teto é 5 MB × 3 arquivos, decisão do dono —
+    // override, nunca requisito, e sem controle na tela.
+    WATCHPILE_LOG_PATH: z.string().min(1).optional(),
+    WATCHPILE_LOG_MAX_MB: z.coerce.number().positive().default(5),
+    WATCHPILE_LOG_FILES: z.coerce.number().int().min(1).default(3),
   })
   .transform((parsed) => ({
     ...parsed,
     WATCHPILE_ART_CACHE_PATH:
       parsed.WATCHPILE_ART_CACHE_PATH ??
       besideDatabase(parsed.WATCHPILE_DB_PATH, 'art'),
+    WATCHPILE_LOG_PATH:
+      parsed.WATCHPILE_LOG_PATH ??
+      besideDatabase(parsed.WATCHPILE_DB_PATH, 'logs'),
   }))
 
 export type Env = z.infer<typeof EnvSchema>

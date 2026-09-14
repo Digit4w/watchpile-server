@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { registerSecret } from '../../lib/log-redact.js'
 import { EMBEDDED_CREDENTIALS } from './providers.embedded.js'
 
 /**
@@ -53,6 +54,20 @@ export function envVarFor(providerSlug: string, credentialKey: string): string {
  * como uma chave que existe e não funciona.
  */
 export function resolveCredential(
+  providerSlug: string,
+  credentialKey: string,
+  stored: Record<string, string>,
+): ResolvedCredential {
+  const resolved = resolveFromChain(providerSlug, credentialKey, stored)
+  // Toda credencial que o servidor chega a USAR passa por aqui, e é por isso
+  // que o registro mora aqui: a partir deste ponto o valor pode acabar numa URL,
+  // num header ecoado ou numa mensagem de erro, e o log o raspa por valor
+  // (`lib/log-redact.ts`).
+  registerSecret(resolved.value)
+  return resolved
+}
+
+function resolveFromChain(
   providerSlug: string,
   credentialKey: string,
   stored: Record<string, string>,
