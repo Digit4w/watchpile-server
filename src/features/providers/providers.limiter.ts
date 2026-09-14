@@ -71,11 +71,22 @@ function configFor(slug: string): LimiterConfig {
  * ── Por que uma FRAÇÃO do burst, e não uma taxa ─────────────────────────────
  * O que a tela precisa não é de vazão — é de **fichas prontas no instante em
  * que alguém abre a grade**. Uma cota por segundo não guarda nada para esse
- * instante; um piso no balde guarda. Metade do burst é o que sobra sempre, e
- * como o burst já é declarado por provedor, a reserva acompanha quem ele é sem
- * um segundo número para calibrar.
+ * instante; um piso no balde guarda. Como o burst já é declarado por provedor,
+ * a reserva acompanha quem ele é sem um segundo número para calibrar.
+ *
+ * ── 0,2 e não 0,5, e o número saiu de MEDIR o custo — 13/09/2026 ───────────
+ * A primeira versão reservava metade do burst, calibrada contra o AniList
+ * (0,5/s), onde a disputa realmente machuca. Medido num provedor a 3/s com uma
+ * biblioteca de 1.442 obras, ela custava caro e protegia pouco: o aquecimento
+ * andava a **0,54 obras/s — 18% do orçamento** —, e uma grade fria levava o
+ * MESMO tempo com ele rodando (2,97s) e sem ele (2,78s).
+ *
+ * O colchão alto não estava evitando disputa; estava só prolongando o período
+ * em que a biblioteca fica fria — que é justamente quando cada carta custa uma
+ * ida à rede. **Proteger a tela devagar demais é deixá-la desprotegida por mais
+ * tempo.**
  */
-const BACKGROUND_RESERVE = 0.5
+const BACKGROUND_RESERVE = 0.2
 
 export function reserveToken(
   slug: string,
@@ -133,16 +144,20 @@ export function reserveToken(
   }
 
   /**
-   * **O trabalho de fundo não debita adiantado.** Quem tem alguém esperando sai
-   * com a ficha reservada e um instante próprio — é o que ordena a fila pela
-   * chegada. O de fundo apenas DORME até a ficha existir de verdade e tenta de
-   * novo; se nesse meio-tempo a tela pedir, ela leva, que é o ponto.
+   * **Todo mundo debita, inclusive o de fundo** — 13/09/2026.
+   *
+   * A primeira versão fazia o de fundo dormir sem debitar e tentar de novo, para
+   * que uma fila de mil obras não tomasse a frente de quem abriu a grade. O
+   * argumento estava errado sobre o próprio consumidor: **o aquecimento é um
+   * laço SEQUENCIAL**, que pede a ficha seguinte só depois de terminar a obra
+   * anterior — ele nunca tem mais de um pedido no ar, então não havia fila a
+   * evitar. O que aquele retry produzia era espera repetida, e foi parte do
+   * aquecimento andar a 18% do orçamento do provedor.
+   *
+   * Quem separa os dois agora é só o colchão, que é a parte que se mediu servir.
+   * E o débito é o que mantém o teto do provedor de pé: sem ele, com o laço de
+   * retry removido, o de fundo sairia daqui sem nunca gastar uma ficha.
    */
-  if (background) {
-    buckets.set(slug, bucket)
-    return waitMs
-  }
-
   bucket.tokens -= 1
   buckets.set(slug, bucket)
   return waitMs
@@ -182,48 +197,17 @@ export async function awaitToken(
   slug: string,
   declared: LimiterConfig | null | undefined,
   maxWaitMs: number,
-  /** Ver `reserveToken`: deixa o colchão de pé e não gasta ficha do futuro. */
+  /** Ver `reserveToken`: deixa o colchão de pé para quem tem alguém esperando. */
   background = false,
 ): Promise<boolean> {
-  const deadline = Date.now() + maxWaitMs
-
-  /**
-   * **O de fundo tenta de novo; o de primeiro plano não precisa.**
-   *
-   * Quem tem alguém esperando sai daqui com a ficha já debitada, então uma volta
-   * basta. O de fundo apenas dorme até a ficha existir — e ao acordar ela pode
-   * ter sido levada por quem chegou com pressa, que é o comportamento desejado.
-   * O laço é limitado pelo mesmo prazo, então ele termina de um jeito ou de
-   * outro em vez de girar enquanto alguém navega.
-   */
-  for (;;) {
-    const remaining = background ? deadline - Date.now() : maxWaitMs
-    if (remaining < 0) {
-      return false
-    }
-
-    const waitMs = reserveToken(
-      slug,
-      Date.now(),
-      declared,
-      remaining,
-      background,
-    )
-    if (waitMs === null) {
-      return false
-    }
-    if (waitMs > 0) {
-      await sleep(waitMs)
-    }
-    if (!background) {
-      return true
-    }
-
-    /** Agora a ficha existe. Tenta debitá-la de fato, sem esperar de novo. */
-    if (reserveToken(slug, Date.now(), declared, 0, background) === 0) {
-      return true
-    }
+  const waitMs = reserveToken(slug, Date.now(), declared, maxWaitMs, background)
+  if (waitMs === null) {
+    return false
   }
+  if (waitMs > 0) {
+    await sleep(waitMs)
+  }
+  return true
 }
 
 function sleep(ms: number): Promise<void> {
