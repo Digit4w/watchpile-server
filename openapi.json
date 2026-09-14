@@ -384,6 +384,79 @@
         },
         "required": ["kind"]
       },
+      "LogPage": {
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogLine"
+            }
+          },
+          "hasOlder": {
+            "type": "boolean"
+          },
+          "usage": {
+            "type": "object",
+            "properties": {
+              "files": {
+                "type": "integer"
+              },
+              "bytes": {
+                "type": "integer"
+              },
+              "limitBytes": {
+                "type": "integer"
+              }
+            },
+            "required": ["files", "bytes", "limitBytes"]
+          }
+        },
+        "required": ["lines", "hasOlder", "usage"]
+      },
+      "LogLine": {
+        "type": "object",
+        "properties": {
+          "time": {
+            "type": "number"
+          },
+          "level": {
+            "type": "integer"
+          },
+          "msg": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "nullable": true
+            }
+          },
+          "err": {
+            "$ref": "#/components/schemas/LogError"
+          }
+        },
+        "required": ["time", "level", "msg", "fields", "err"]
+      },
+      "LogError": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "type": {
+            "type": "string",
+            "nullable": true
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "stack": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": ["type", "message", "stack"]
+      },
       "ServerMeta": {
         "type": "object",
         "properties": {
@@ -5226,6 +5299,134 @@
           },
           "401": {
             "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/logs": {
+      "get": {
+        "tags": ["Logs"],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": ["all", "warn", "error"],
+              "default": "all"
+            },
+            "required": false,
+            "name": "level",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "number",
+              "nullable": true
+            },
+            "required": false,
+            "name": "before",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "number",
+              "nullable": true
+            },
+            "required": false,
+            "name": "after",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The newest log lines that match the filter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "This is set by the server admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/logs/download": {
+      "get": {
+        "tags": ["Logs"],
+        "responses": {
+          "200": {
+            "description": "Every log file this server kept, oldest first, as JSON Lines",
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "This is set by the server admin",
             "content": {
               "application/json": {
                 "schema": {

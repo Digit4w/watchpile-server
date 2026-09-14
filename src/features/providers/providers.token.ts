@@ -1,3 +1,6 @@
+import { registerSecret } from '../../lib/log-redact.js'
+import { logger } from '../../lib/logger.js'
+
 /**
  * O token de um provedor `oauth-client-credentials`, guardado até perto de
  * vencer.
@@ -105,11 +108,20 @@ export async function tokenFor({
     })
 
     if (!response.ok) {
+      // Só o status: o corpo pode ecoar o pedido, e o pedido leva o secret.
+      logger.warn(
+        { provider: providerSlug, status: response.status },
+        'token exchange refused',
+      )
       return { ok: false, reason: 'refused', status: response.status }
     }
 
     body = await response.json()
-  } catch {
+  } catch (error) {
+    logger.warn(
+      { provider: providerSlug, err: error },
+      'token exchange unreachable',
+    )
     return { ok: false, reason: 'unreachable' }
   }
 
@@ -121,8 +133,12 @@ export async function tokenFor({
      * portal cativo, um proxy no meio. Contar como recusa é mais honesto que
      * guardar string vazia e falhar na requisição seguinte, longe daqui.
      */
+    logger.warn({ provider: providerSlug }, 'token exchange returned no token')
     return { ok: false, reason: 'refused', status: 200 }
   }
+
+  // O token é derivado do secret e vale o mesmo que ele por dois meses.
+  registerSecret(token)
 
   /**
    * `expires_in` vem em SEGUNDOS. Sem ele — provedor que não anuncia validade —

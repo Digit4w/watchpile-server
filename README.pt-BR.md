@@ -88,8 +88,7 @@ comuns de ajustar:
 | `PORT` | `3210` | porta interna que a API escuta |
 | `WATCHPILE_SERVE_CLIENT` | `true` | `false` desliga o cliente web, sobra só a API |
 
-Volume único, `/data`, com o banco e (futuramente) o cache de arte dentro —
-mapeie só ele. `HEALTHCHECK` embutido no `Dockerfile` para Dockge, Portainer e
+Volume único, `/data`, com o banco e o cache de arte dentro — mapeie só ele. `HEALTHCHECK` embutido no `Dockerfile` para Dockge, Portainer e
 Watchtower.
 
 Backup tem seção própria — ver [Backup](#backup), abaixo.
@@ -221,6 +220,7 @@ obrigatória.
 | `NODE_ENV` | `development` | `production` em qualquer imagem publicada |
 | `LOG_LEVEL` | `info` | nível do log estruturado (pino) |
 | `WATCHPILE_DB_PATH` | `./data/watchpile.db` | caminho do arquivo SQLite |
+| `WATCHPILE_ART_CACHE_PATH` | `art/` ao lado do banco | onde a arte cacheada é guardada |
 | `WATCHPILE_SERVE_CLIENT` | `true` | se o servidor também serve o build do cliente web |
 | `WATCHPILE_CLIENT_DIST_PATH` | `./client-dist` | onde procurar o build do cliente, quando `WATCHPILE_SERVE_CLIENT=true` |
 | `PUID` / `PGID` | `1000` / `1000` | (só Docker) usuário do processo dentro do container |

@@ -1,3 +1,4 @@
+import { logger } from '../../lib/logger.js'
 import { artUrl, asString, readPath } from '../providers/providers.client.js'
 import { detailFieldMapOf, fetchDetail } from '../providers/providers.detail.js'
 import type { ProviderRow, TypeBinding } from '../providers/providers.query.js'
@@ -151,7 +152,13 @@ export async function fetchArt({
       signal: AbortSignal.timeout(provider.timeoutMs),
     })
 
+    // Nenhuma das linhas abaixo leva a URL da imagem: ela sai do molde da
+    // definição e pode carregar chave. Provedor, id e o motivo bastam pra
+    // reproduzir.
+    const where = { provider: provider.slug, externalId }
+
     if (!image.ok) {
+      logger.warn({ ...where, status: image.status }, 'art image refused')
       return { ok: false, reason: 'provider-error' }
     }
 
@@ -160,16 +167,25 @@ export async function fetchArt({
       // O provedor respondeu, mas não com uma imagem — uma página de erro em
       // HTML, tipicamente. Gravar isso encheria o cache de lixo servido como
       // arte, e o navegador desenharia o ícone de imagem quebrada.
+      logger.warn({ ...where, contentType }, 'art response is not an image')
       return { ok: false, reason: 'provider-error' }
     }
 
     const bytes = Buffer.from(await image.arrayBuffer())
     if (bytes.byteLength === 0 || bytes.byteLength > MAX_BYTES) {
+      logger.warn(
+        { ...where, bytes: bytes.byteLength },
+        'art image size out of range',
+      )
       return { ok: false, reason: 'provider-error' }
     }
 
     return { ok: true, art: { bytes, contentType } }
-  } catch {
+  } catch (error) {
+    logger.warn(
+      { provider: provider.slug, externalId, err: error },
+      'art image unreachable',
+    )
     return { ok: false, reason: 'unreachable' }
   }
 }

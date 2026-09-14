@@ -38,7 +38,11 @@ server/
 │   │   ├── create-app.ts         # createRouter() / createApp()
 │   │   ├── configure-open-api.ts # registra /doc + /reference (Scalar)
 │   │   ├── types.ts              # AppBindings, AppOpenAPI, AppRouteHandler<R>
-│   │   └── errors.ts             # notFound + onError centrais
+│   │   ├── errors.ts             # notFound + onError centrais
+│   │   ├── logger.ts             # o logger RAIZ: stdout + arquivo, redigido (14/09/2026)
+│   │   ├── log-rotation.ts       # arquivo com rotação por tamanho, em processo
+│   │   ├── log-redact.ts         # raspa segredo por valor e por nome, na linha serializada
+│   │   └── data-dir.ts           # `besideDatabase()`: o que vive ao lado do banco
 │   ├── db/
 │   │   ├── client.ts    # instância Drizzle + SQLite, cria o diretório, liga WAL
 │   │   ├── schema/      # uma tabela por arquivo — vazio até o modelo de dados existir
@@ -1531,6 +1535,51 @@ nomes é o mesmo dos vínculos: **`default_provider_slug` é a escolha crua**
   de qualquer `beforeEach`, num estado que não é o que os testes vão ver
 - **v1 tem só TMDB** (filmes e séries). Os outros entram um por vez (3.12)
 
+## O log de diagnóstico — 14/09/2026
+
+Brief 5.1 e item 2 da fila do dono, *"fundamental para eu ter dados de debug dos
+usuários que quiserem me fornecer"*. Quatro commits na mesma branch, e as
+decisões são todas do dono.
+
+| Peça | Onde |
+| --- | --- |
+| O logger raiz, que qualquer módulo importa | `src/lib/logger.ts` |
+| Arquivo com rotação (5 MB × 3), em processo | `src/lib/log-rotation.ts` + `.spec.ts` |
+| Redação por valor e por nome | `src/lib/log-redact.ts` + `.spec.ts` |
+| A costura escrita → arquivo → redação | `src/lib/logger.spec.ts` |
+| Leitura de trás pra frente, e download | `src/features/logs/` (admin, caminho inteiro) |
+
+**Sete invariantes:**
+
+- **O logger é um MÓDULO, não o middleware.** Import, aquecimento de arte e
+  atualização rodam fora de requisição, e antes iam de `console.*`, que não chega
+  ao arquivo. `console.*` só sobra em `env.ts`, que roda antes de existir logger
+- **Dois destinos, mesma linha redigida.** stdout em dev passa pelo `pino-pretty`
+  **como stream**, nunca como `transport`: a worker thread é o que quebra no
+  Electron empacotado. A rotação é nossa pelo mesmo motivo, sem dependência nova
+- **O arquivo mora ao lado do BANCO** (`besideDatabase`), porque o banco é o único
+  caminho que o Docker e o Electron declaram. O cache de arte passou a derivar do
+  mesmo jeito — o padrão antigo, `./data/art`, caía fora do volume no container,
+  com um comentário ao lado afirmando o contrário
+- **Segredo sai no emissor, SEMPRE**, no `hooks.streamWrite`: por valor (quem
+  resolve credencial, token OAuth e segredo de sessão chama `registerSecret`) e
+  por nome (cookie, authorization, senha, parâmetro de credencial em query). A
+  leitura raspa de novo, porque o registro é do processo e não do arquivo
+- **A linha de requisição não leva header.** O padrão do `hono-pino` gravava
+  todos, e o cookie de sessão ia junto. Nível: 5xx `error`, 4xx e resposta ≥1s
+  `info`, o resto `debug` — senão o arquivo enche de pôster antes do erro
+- **`warn` quando o terceiro falha, `error` quando a falha é nossa**, e nunca a
+  URL montada no log (ela pode carregar chave). Falha tipada de import loga o
+  `kind` e **não** os `params`, que carregam nome de usuário
+- **O cursor da leitura é o `time` do pino**, que sobrevive à rotação. Duas
+  linhas no mesmo milissegundo na fronteira de uma página podem repetir ou pular,
+  e é custo assumido. O download é JSON Lines, e o handler tem um `as never`
+  contra o tipo do `@hono/zod-openapi`, que trata `application/x-ndjson` como
+  JSON malformado — declarar outro content type faria o `openapi.json` mentir
+
+**Em teste o arquivo vai para `./data/logs-test`** (`vitest.config.ts`): sem isso
+`dirname(':memory:')` é `.` e a suíte escreveria na raiz do repositório.
+
 ## O banco em WAL, e import em lotes
 
 `better-sqlite3` é síncrono: cada query bloqueia o event loop. Irrelevante no uso
@@ -1822,7 +1871,9 @@ tela do produto. O que não pode faltar:
   persistir junto, senão reconstrói a cada recriação do container
 - **`TZ` respeitado** — "assisti hoje" e o log dependem disso
 - **Imagem amd64 + arm64.** Boa parte desse público roda em Raspberry Pi
-- **Log em stdout**, tag `:x.y.z` além de `:latest`
+- **Log em stdout E em arquivo** (brief 5.1, corrigido em 14/09/2026): stdout é o
+  `docker logs`; o arquivo mora em `/data/logs`, dentro do volume, com rotação — ver
+  "O log de diagnóstico", acima. Tag `:x.y.z` além de `:latest`
 
 **Backup é comando documentado, não `cp`.** Com WAL ligado, copiar o arquivo com o
 servidor rodando pode render banco corrompido ou sem as transações do WAL. O caminho é

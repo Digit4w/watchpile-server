@@ -1,4 +1,5 @@
 import type { entries } from '../../db/schema/entries.js'
+import { logger } from '../../lib/logger.js'
 import {
   ImportFailure,
   type ImportItem,
@@ -156,7 +157,9 @@ async function fetchCollections(
       },
       body: JSON.stringify({ query: QUERY, variables: { userName: username } }),
     })
-  } catch {
+  } catch (error) {
+    // A causa não cabe no `kind`, então é o log que a guarda.
+    logger.warn({ source: 'anilist', err: error }, 'import source unreachable')
     throw new ImportFailure('source-down')
   }
 

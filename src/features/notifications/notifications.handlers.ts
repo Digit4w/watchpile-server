@@ -1,3 +1,4 @@
+import { logger } from '../../lib/logger.js'
 import type { AppRouteHandler } from '../../lib/types.js'
 import { reconcileInstanceConditions } from './notifications.instance-conditions.js'
 import type { NotificationKind } from './notifications.kinds.js'
@@ -31,7 +32,10 @@ function parseParams(raw: string): Record<string, string | number> {
           typeof entry[1] === 'string' || typeof entry[1] === 'number',
       ),
     )
-  } catch {
+  } catch (error) {
+    // Nós gravamos esses parâmetros; JSON quebrado aqui é defeito nosso, mesmo
+    // que a tela sobreviva com a frase sem os valores.
+    logger.error({ err: error }, 'notification params are not valid JSON')
     return {}
   }
 }

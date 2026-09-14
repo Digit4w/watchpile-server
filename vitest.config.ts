@@ -9,6 +9,10 @@ export default defineConfig({
       // sistema de arquivos. Diretório próprio pra que o teste não encoste no
       // cache de quem está rodando o servidor na mesma máquina.
       WATCHPILE_ART_CACHE_PATH: './data/art-test',
+      // O log também vai pra disco. Sem isto ele derivaria do banco, e
+      // `dirname(':memory:')` é `.` — a suíte escreveria `./logs` na raiz do
+      // repositório.
+      WATCHPILE_LOG_PATH: './data/logs-test',
     },
     setupFiles: ['./test/setup.ts'],
   },

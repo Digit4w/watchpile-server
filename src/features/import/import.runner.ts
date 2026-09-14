@@ -1,4 +1,5 @@
 import { setImmediate as yieldToLoop } from 'node:timers/promises'
+import { logger } from '../../lib/logger.js'
 import { type ArtTarget, warmArt } from '../art/art.warm.js'
 import * as notifications from '../notifications/notifications.store.js'
 import { refreshTitles } from '../titles/titles.refresh.js'
@@ -77,6 +78,10 @@ export async function run(
     const cancelled = await applyAll(jobId, reading.items, apply, mode)
 
     jobs.finish(jobId, { status: cancelled ? 'cancelled' : 'done' })
+    logger.info(
+      { jobId, items: reading.items.length, cancelled },
+      'import finished',
+    )
     if (!cancelled) {
       notifyFinished(jobId)
       /**
@@ -102,9 +107,14 @@ export async function run(
         ? error
         : new ImportFailure('unexpected', {})
 
-    if (!(error instanceof ImportFailure)) {
+    if (error instanceof ImportFailure) {
+      // Falha tipada é da FONTE (perfil privado, API fora): a tela já diz qual,
+      // e o log guarda o `kind` pra quem vier perguntar. `params` fica de fora,
+      // porque carrega o nome de usuário de quem importou.
+      logger.warn({ jobId, kind: failure.kind }, 'import failed')
+    } else {
       // O `kind` não promete causa; o rastro fica onde rastro mora.
-      console.error('[import] job %d failed unexpectedly', jobId, error)
+      logger.error({ jobId, err: error }, 'import failed unexpectedly')
     }
 
     jobs.finish(jobId, {
@@ -157,7 +167,7 @@ export function startFilling(
     })
   } catch (error) {
     // Já há um aquecimento rodando: o índice único recusou, e isso É a resposta.
-    console.warn('[fill] job not started for user %d', userId, error)
+    logger.debug({ userId, err: error }, 'fill job not started')
     return null
   }
 
@@ -174,7 +184,7 @@ export function startFilling(
       })
     })
     .catch((error: unknown) => {
-      console.error('[fill] job %d failed', job.id, error)
+      logger.error({ jobId: job.id, err: error }, 'fill job failed')
       jobs.finish(job.id, { status: 'failed', errorKind: 'unexpected' })
     })
     .finally(() => {
@@ -228,7 +238,7 @@ export function startRefresh(
     })
   } catch (error) {
     // Já há uma varredura rodando: o índice único recusou, e isso é a resposta.
-    console.warn('[refresh] job not started for user %d', userId, error)
+    logger.debug({ userId, err: error }, 'refresh job not started')
     return null
   }
 
@@ -259,7 +269,7 @@ export function startRefresh(
       })
     })
     .catch((error: unknown) => {
-      console.error('[refresh] job %d failed', job.id, error)
+      logger.error({ jobId: job.id, err: error }, 'refresh job failed')
       jobs.finish(job.id, { status: 'failed', errorKind: 'unexpected' })
     })
     .finally(() => {
@@ -311,7 +321,7 @@ function startEnriching(importJobId: number, targets: ArtTarget[]): void {
      * e o segundo não abre o seu. A arte que ficar de fora cai na rede de
      * segurança do caminho sob demanda, que é a mesma de sempre.
      */
-    console.warn('[import] enrich job not started for %d', importJobId, error)
+    logger.debug({ importJobId, err: error }, 'enrich job not started')
     return
   }
 
@@ -334,7 +344,7 @@ function startEnriching(importJobId: number, targets: ArtTarget[]): void {
       return written
     })
     .catch((error: unknown) => {
-      console.error('[import] enrich failed for job %d', job.id, error)
+      logger.error({ jobId: job.id, err: error }, 'enrich job failed')
       jobs.finish(job.id, { status: 'failed', errorKind: 'unexpected' })
     })
     .finally(() => {

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
+import { logger } from '../../lib/logger.js'
 import { assetFor } from './updates.asset.js'
 import { isNewer } from './updates.compare.js'
 import { readReleases } from './updates.feed.js'
@@ -90,7 +91,10 @@ export function startDownload(
   }
 
   state = { state: 'downloading', version: '', received: 0, total: null }
-  void run(installed, fetchImpl).catch(() => {
+  void run(installed, fetchImpl).catch((error: unknown) => {
+    // Aqui só chega falha NOSSA — disco, diretório temporário —, porque a de
+    // rede o `run` já converte em estado.
+    logger.error({ err: error }, 'update download failed')
     state = { state: 'failed', reason: 'failed' }
   })
   return state
@@ -144,6 +148,10 @@ async function run(
     headers: { 'User-Agent': 'Watchpile' },
   })
   if (!res.ok || !res.body) {
+    logger.warn(
+      { version: newest.version, asset: asset.name, status: res.status },
+      'update asset refused',
+    )
     state = { state: 'failed', reason: 'failed' }
     return
   }
@@ -184,7 +192,11 @@ async function run(
       ),
       createWriteStream(join(dir, fileName)),
     )
-  } catch {
+  } catch (error) {
+    logger.warn(
+      { version, fileName, err: error },
+      'update download interrupted',
+    )
     state = { state: 'failed', reason: 'failed' }
     return
   }

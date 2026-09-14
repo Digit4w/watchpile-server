@@ -1,4 +1,5 @@
 import { env } from '../../env.js'
+import { logger } from '../../lib/logger.js'
 import type { Asset } from './updates.asset.js'
 
 /**
@@ -71,16 +72,21 @@ export async function readReleases(
     })
 
     if (!res.ok) {
+      logger.warn({ status: res.status }, 'update feed refused')
       return { ok: false }
     }
 
     const body: unknown = await res.json()
     if (!Array.isArray(body)) {
+      logger.warn('update feed is not a list of releases')
       return { ok: false }
     }
 
     return { ok: true, releases: body.flatMap(toRelease) }
-  } catch {
+  } catch (error) {
+    // Uma resposta só pra tela; pro log, a causa — é ela que separa "sem rede"
+    // de "o GitHub mudou o formato".
+    logger.warn({ err: error }, 'update feed unreachable')
     /**
      * Sem rede, prazo estourado, DNS, JSON quebrado: **uma resposta só**. A
      * tela faz a mesma coisa em todos — diz que não conseguiu conferir e

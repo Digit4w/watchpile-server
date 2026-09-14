@@ -1,4 +1,5 @@
 import type { FieldMap, ProviderEndpoints } from '../../db/schema/providers.js'
+import { logger } from '../../lib/logger.js'
 import { prepareRequest } from './providers.auth.js'
 import { optionVars } from './providers.body.js'
 import {
@@ -515,6 +516,10 @@ export async function searchProvider({
 
     if (!response.ok) {
       const reason = refusalOf(provider, response.status)
+      logger.warn(
+        { provider: provider.slug, status: response.status, reason },
+        'provider refused search',
+      )
       /**
        * O corpo só é lido quando ele vai a algum lugar. Ler e jogar fora seria
        * gastar a resposta de um provedor que acabou de recusar — e no `down` a
@@ -544,7 +549,13 @@ export async function searchProvider({
     // Continua aqui dentro: o corpo chega pela rede, e ela pode cair no meio
     // da leitura — que é `unreachable` com toda razão.
     body = await response.text()
-  } catch {
+  } catch (error) {
+    // Pro LOG ela vai — é lá que se descobre se foi DNS, prazo ou conexão
+    // recusada —, e sai redigida pelo `streamWrite`. Pra resposta, não.
+    logger.warn(
+      { provider: provider.slug, err: error },
+      'provider search unreachable',
+    )
     /**
      * A mensagem do erro **não sobe**, pelo mesmo motivo do "testar conexão": a
      * URL montada carrega a chave na query quando o estilo é `query-key`, e
@@ -637,6 +648,8 @@ function parseResults(
   try {
     body = JSON.parse(raw)
   } catch {
+    // A tela vê lista vazia, que é o menos errado; o log diz que não era vazia.
+    logger.warn({ provider: providerSlug }, 'provider search body is not JSON')
     // Corpo que não é JSON: o provedor respondeu 200 com uma página de erro, o
     // que acontece com proxy no meio. Lista vazia é o menos errado — quem
     // chamou trata o vazio, e derrubar a busca com 500 diria que o defeito é
