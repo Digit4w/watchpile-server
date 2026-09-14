@@ -1,0 +1,16 @@
+-- Dispensar um trabalho interrompido — 14/09/2026, pedido do dono.
+--
+-- Um aquecimento morre calado hoje: o container reinicia, a reconciliação
+-- fecha a linha como `interrupted`, e ninguém fica sabendo que 1.125 obras
+-- ficaram sem arte. A tela passa a mostrar isso, com duas saídas — continuar,
+-- que é o mesmo trabalho de novo (ele pula o que já está feito), ou dispensar.
+--
+-- ── Dispensar não é apagar, e é a mesma distinção de `notifications` ────────
+-- Lá lido e dispensado são dois estados, e é o que dá endereço próprio à rota
+-- de histórico. Aqui vale igual: a linha FICA, e o que sai é o pedido de
+-- atenção na tela. O que aconteceu aconteceu.
+--
+-- Carimbo e não booleano, pelo mesmo motivo de `cancel_requested_at` e de
+-- `pinned_at`: *quando* alguém dispensou é um fato que um `1` perderia, e o
+-- `NULL` já significa "não dispensado" sem precisar de default.
+ALTER TABLE `import_jobs` ADD `dismissed_at` integer;

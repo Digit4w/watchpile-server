@@ -48,5 +48,7 @@ const router = createRouter()
    * colide com `/{id}/refresh`: um exige o segmento do id e o outro não.
    */
   .openapi(titlesRoutes.refreshLibrary, titlesHandlers.refreshLibrary)
+  /** `POST /fill` — preencher o que falta. Serve `Continue` e `Fill in`. */
+  .openapi(titlesRoutes.fillMissing, titlesHandlers.fillMissing)
 
 export default router

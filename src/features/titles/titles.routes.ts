@@ -276,3 +276,41 @@ export const refreshLibrary = createRoute({
 })
 
 export type RefreshLibraryRoute = typeof refreshLibrary
+
+/**
+ * Preencher o que falta — 14/09/2026, pedido do dono.
+ *
+ * **A mesma rota serve `Continue` e `Fill in missing`**, e não por economia: o
+ * aquecimento pula o que já está guardado, então retomar um trabalho
+ * interrompido é literalmente rodá-lo de novo. Duas rotas para o mesmo efeito
+ * seriam duas maneiras de perguntar a mesma coisa, e a segunda ficaria para
+ * trás no dia em que a regra mudasse.
+ *
+ * Responde **202 com o job**, como a varredura: preencher mil obras leva
+ * minutos, e nenhuma requisição HTTP espera isso.
+ */
+export const fillMissing = createRoute({
+  method: 'post',
+  path: '/fill',
+  tags: ['Entries'],
+  responses: {
+    202: {
+      content: { 'application/json': { schema: RefreshStartedSchema } },
+      description: 'The fill-in started, and this is the job to watch',
+    },
+    401: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'No active session',
+    },
+    409: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'Something is already filling in',
+    },
+    422: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'Nothing is missing',
+    },
+  },
+})
+
+export type FillMissingRoute = typeof fillMissing

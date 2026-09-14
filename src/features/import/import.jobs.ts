@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, notInArray, sql } from 'drizzle-orm'
+import { and, desc, eq, isNull, ne, notInArray, sql } from 'drizzle-orm'
 import { db } from '../../db/client.js'
 import { importJobs } from '../../db/schema/import-jobs.js'
 import type {
@@ -274,6 +274,57 @@ export function reconcileInterrupted(aliveHere: Iterable<number>): number {
         alive.length > 0 ? notInArray(importJobs.id, alive) : undefined,
       ),
     )
+    .returning({ id: importJobs.id })
+    .all().length
+}
+
+/**
+ * Dispensa um trabalho interrompido — 14/09/2026.
+ *
+ * **Dispensar não é apagar**, e é a mesma distinção que `notifications` faz
+ * entre lido e dispensado: a linha fica no histórico, e o que sai é o aviso da
+ * tela. O que aconteceu aconteceu; o que se tira é o pedido de atenção.
+ *
+ * Só alcança o que está `failed` — um trabalho vivo não se dispensa, se para.
+ */
+export function dismiss(id: number, userId: number): boolean {
+  return (
+    db
+      .update(importJobs)
+      .set({ dismissedAt: new Date() })
+      .where(
+        and(
+          eq(importJobs.id, id),
+          eq(importJobs.userId, userId),
+          eq(importJobs.status, 'failed'),
+          isNull(importJobs.dismissedAt),
+        ),
+      )
+      .returning({ id: importJobs.id })
+      .all().length > 0
+  )
+}
+
+/**
+ * Limpa o histórico desta pessoa — 14/09/2026, pedido do dono.
+ *
+ * ── O que ela apaga, e o que ela NÃO toca ──────────────────────────────────
+ * Só linhas **terminadas**: `done`, `failed` e `cancelled`. O que está
+ * `running` fica, e não por zelo — apagar a linha de um trabalho vivo deixaria
+ * o executor escrevendo contadores numa linha que não existe, e a reconciliação
+ * de zumbis perderia a referência que usa para fechá-lo.
+ *
+ * ── Por que ela APAGA, em vez de esconder ──────────────────────────────────
+ * Porque é o que a palavra diz. Uma coluna `hidden_at` deixaria o banco
+ * crescendo para sempre com linhas que ninguém pode ver — e `import_jobs` já
+ * acumula: onze linhas em poucos dias de uso medidos em 14/09/2026. O histórico
+ * de import não sustenta nada (o `event_log` é quem guarda o que entrou, e ele
+ * não é tocado aqui), então não há o que preservar.
+ */
+export function clearHistory(userId: number): number {
+  return db
+    .delete(importJobs)
+    .where(and(eq(importJobs.userId, userId), ne(importJobs.status, 'running')))
     .returning({ id: importJobs.id })
     .all().length
 }

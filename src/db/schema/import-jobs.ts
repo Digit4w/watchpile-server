@@ -197,6 +197,18 @@ export const importJobs = sqliteTable(
     errorKind: text('error_kind'),
     errorParams: text('error_params').notNull().default('{}'),
 
+    /**
+     * Quando alguém dispensou o aviso de um trabalho interrompido — 14/09/2026.
+     *
+     * **Dispensar não é apagar**: a linha fica no histórico e o que sai é o
+     * pedido de atenção na tela, que é a mesma distinção entre lido e
+     * dispensado que `notifications` faz.
+     *
+     * Carimbo e não booleano, como `cancel_requested_at` e `pinned_at`: *quando*
+     * é um fato que um `1` perderia, e o `NULL` já significa "não dispensado".
+     */
+    dismissedAt: integer('dismissed_at', { mode: 'timestamp' }),
+
     startedAt: integer('started_at', { mode: 'timestamp' })
       .notNull()
       .default(sql`(unixepoch())`),
