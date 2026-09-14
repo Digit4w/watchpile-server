@@ -119,6 +119,72 @@ export async function run(
 }
 
 /**
+ * **Preencher o que falta** — 14/09/2026, pedido do dono.
+ *
+ * ── Por que ela é `enrich`, e não um quarto tipo ───────────────────────────
+ * Porque é exatamente o mesmo trabalho que o import dispara ao terminar:
+ * `warmArt` sem `force` e sem `fresh`, que **pula o que já está guardado**. O
+ * que muda é só o gatilho — lá é consequência de um import, aqui é alguém
+ * pedindo. Um `kind` novo separaria duas linhas idênticas no banco para
+ * registrar quem apertou o botão, e isso não muda nada do que a tela mostra.
+ *
+ * ── Uma ação, duas situações, e é a mesma por construção ───────────────────
+ * O dono pediu duas coisas: lidar com stops repentinos, e poder disparar o
+ * aquecimento à mão. **São a mesma.** Aquecer pula o que já está feito, então
+ * "continuar de onde parou" não precisa saber onde parou — basta rodar de novo,
+ * e ele acha o que falta. É por isso que `Continue` e `Fill in missing`
+ * chamam esta função sem diferença nenhuma.
+ *
+ * E ela **não é** o `Refresh`: aquele passa `force: true, fresh: true` e relê a
+ * biblioteca inteira à força, custando tudo em vez de custar só o buraco.
+ */
+export function startFilling(
+  userId: number,
+  targets: readonly ArtTarget[],
+): jobs.Job | null {
+  if (targets.length === 0) {
+    return null
+  }
+
+  let job: jobs.Job
+  try {
+    job = jobs.start({
+      userId,
+      /** Não veio de fonte nenhuma — como a varredura (`0054`). */
+      source: null,
+      mode: 'skip',
+      kind: 'enrich',
+    })
+  } catch (error) {
+    // Já há um aquecimento rodando: o índice único recusou, e isso É a resposta.
+    console.warn('[fill] job not started for user %d', userId, error)
+    return null
+  }
+
+  aliveHere.add(job.id)
+
+  void warmArt(targets, undefined, {
+    begin: (total) => jobs.setTotal(job.id, total),
+    tick: (done) => jobs.setProcessed(job.id, done),
+    cancelled: () => jobs.cancelRequested(job.id),
+  })
+    .then(() => {
+      jobs.finish(job.id, {
+        status: jobs.cancelRequested(job.id) ? 'cancelled' : 'done',
+      })
+    })
+    .catch((error: unknown) => {
+      console.error('[fill] job %d failed', job.id, error)
+      jobs.finish(job.id, { status: 'failed', errorKind: 'unexpected' })
+    })
+    .finally(() => {
+      aliveHere.delete(job.id)
+    })
+
+  return job
+}
+
+/**
  * A VARREDURA: reler o provedor para a biblioteca inteira — 13/09/2026,
  * item 11(c) da fila do dono.
  *

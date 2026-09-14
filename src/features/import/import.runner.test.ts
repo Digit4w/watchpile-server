@@ -6,7 +6,7 @@ import { notifications } from '../../db/schema/notifications.js'
 import { users } from '../../db/schema/users.js'
 import { hashPassword } from '../auth/auth.crypto.js'
 import * as jobs from './import.jobs.js'
-import { reconcileInterrupted, run } from './import.runner.js'
+import { reconcileInterrupted, run, startFilling } from './import.runner.js'
 import {
   type ApplyItem,
   ImportFailure,
@@ -494,5 +494,128 @@ describe('o enriquecimento é a segunda fase, e tem contador próprio', () => {
 
     expect(jobs.byId(job.id)?.status).toBe('cancelled')
     expect(jobs.latestOfKindFor(userId, 'enrich')).toBeUndefined()
+  })
+})
+
+/**
+ * Preencher o que falta, e o trabalho interrompido — 14/09/2026.
+ *
+ * O que estes testes protegem é a decisão que uniu dois pedidos do dono:
+ * **retomar depois de um stop e disparar à mão são a mesma ação**, porque
+ * aquecer pula o que já está guardado. Se um dia alguém separar as duas, o
+ * teste de `startFilling` continua verde e o de `dismiss` também — o que
+ * quebra é a promessa, e é por isso que ela está escrita aqui.
+ */
+describe('preencher o que falta', () => {
+  it('não abre job quando não há nada faltando', () => {
+    const userId = criarUsuario()
+    expect(startFilling(userId, [])).toBeNull()
+  })
+
+  it('abre um job de aquecimento, do mesmo tipo que o import dispara', () => {
+    const userId = criarUsuario()
+
+    const job = startFilling(userId, [
+      { provider: 'anilist', externalId: '1', mediaType: 'anime' },
+    ])
+
+    /**
+     * **`enrich` e não um quarto tipo**: é literalmente o mesmo trabalho que o
+     * import dispara ao terminar, e o que muda é só quem apertou.
+     */
+    expect(job?.kind).toBe('enrich')
+    /** Não veio de fonte nenhuma, como a varredura. */
+    expect(job?.source).toBeNull()
+  })
+
+  it('recusa quando já há um aquecimento vivo', () => {
+    const userId = criarUsuario()
+    const alvo = [{ provider: 'anilist', externalId: '2', mediaType: 'anime' }]
+
+    expect(startFilling(userId, alvo)).not.toBeNull()
+    // O índice único por tipo recusa o segundo, e isso É a resposta.
+    expect(startFilling(userId, alvo)).toBeNull()
+  })
+})
+
+describe('dispensar um trabalho interrompido', () => {
+  function interrompido(userId: number): number {
+    const job = jobs.start({
+      userId,
+      source: 'mal',
+      mode: 'skip',
+      kind: 'enrich',
+    })
+    jobs.finish(job.id, { status: 'failed', errorKind: 'interrupted' })
+    return job.id
+  }
+
+  /** **Dispensar não é apagar** — a linha fica, o aviso sai. */
+  it('carimba sem remover a linha', () => {
+    const userId = criarUsuario()
+    const id = interrompido(userId)
+
+    expect(jobs.dismiss(id, userId)).toBe(true)
+    expect(jobs.byId(id)).toBeDefined()
+    expect(jobs.byId(id)?.dismissedAt).not.toBeNull()
+  })
+
+  it('não dispensa duas vezes', () => {
+    const userId = criarUsuario()
+    const id = interrompido(userId)
+
+    expect(jobs.dismiss(id, userId)).toBe(true)
+    expect(jobs.dismiss(id, userId)).toBe(false)
+  })
+
+  it('não alcança o trabalho de outra pessoa', () => {
+    const dono = criarUsuario('dono')
+    const outro = criarUsuario('outro')
+    const id = interrompido(dono)
+
+    expect(jobs.dismiss(id, outro)).toBe(false)
+    expect(jobs.byId(id)?.dismissedAt).toBeNull()
+  })
+
+  /** Um trabalho vivo não se dispensa — se para. */
+  it('não dispensa o que ainda está rodando', () => {
+    const userId = criarUsuario()
+    const job = jobs.start({ userId, source: 'mal', mode: 'skip' })
+
+    expect(jobs.dismiss(job.id, userId)).toBe(false)
+  })
+})
+
+describe('limpar o histórico', () => {
+  it('apaga o que terminou e PRESERVA o que está rodando', () => {
+    const userId = criarUsuario()
+
+    const vivo = jobs.start({ userId, source: 'mal', mode: 'skip' })
+    const morto = jobs.start({
+      userId,
+      source: 'csv',
+      mode: 'skip',
+      kind: 'enrich',
+    })
+    jobs.finish(morto.id, { status: 'done' })
+
+    expect(jobs.clearHistory(userId)).toBe(1)
+
+    /**
+     * O vivo fica, e não por zelo: apagar a linha de um trabalho em curso
+     * deixaria o executor escrevendo contadores numa linha que não existe.
+     */
+    expect(jobs.byId(vivo.id)).toBeDefined()
+    expect(jobs.byId(morto.id)).toBeUndefined()
+  })
+
+  it('não alcança o histórico de outra pessoa', () => {
+    const dono = criarUsuario('dono')
+    const outro = criarUsuario('outro')
+    const dele = jobs.start({ userId: outro, source: 'csv', mode: 'skip' })
+    jobs.finish(dele.id, { status: 'done' })
+
+    expect(jobs.clearHistory(dono)).toBe(0)
+    expect(jobs.byId(dele.id)).toBeDefined()
   })
 })

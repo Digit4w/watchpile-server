@@ -27,5 +27,8 @@ const router = createRouter()
   .openapi(routes.importAnilist, handlers.importAnilist)
   .openapi(routes.importMal, handlers.importMal)
   .openapi(routes.cancel, handlers.cancel)
+  .openapi(routes.dismissJob, handlers.dismissJob)
+  /** `DELETE /history` — limpa o que terminou. Ver `jobs.clearHistory`. */
+  .openapi(routes.clearHistory, handlers.clearHistory)
 
 export default router

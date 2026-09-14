@@ -1,7 +1,9 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull, or } from 'drizzle-orm'
 import { db } from '../../db/client.js'
+import { artCache } from '../../db/schema/art-cache.js'
 import { entries } from '../../db/schema/entries.js'
 import { externalIds } from '../../db/schema/external-ids.js'
+import { titleSnapshots } from '../../db/schema/title-snapshots.js'
 import type { ArtTarget } from '../art/art.warm.js'
 import { warmArt } from '../art/art.warm.js'
 import { propagateTotal } from './titles.propagate.js'
@@ -152,4 +154,86 @@ export async function refreshTitles(
   })
 
   return updated
+}
+
+/**
+ * O que ainda FALTA — arte ou snapshot — nas obras de alguém (14/09/2026).
+ *
+ * ── Por que ela é outra pergunta que `refreshTargets` ──────────────────────
+ * Aquela lista tudo que **dá** para atualizar; esta lista o que **está
+ * faltando**. A diferença é a mesma entre as duas ações da tela: *preencher o
+ * que falta* pula o que já existe e custa só o buraco; *reler tudo* não pula
+ * nada e custa a biblioteca inteira.
+ *
+ * ── As duas metades do "falta", e por que o `OR` ───────────────────────────
+ * Uma obra pode ter arte e não ter snapshot — é o caso de toda obra adicionada
+ * antes de `title_snapshots` existir —, e o contrário também acontece quando o
+ * provedor não tem pôster. `warmArt` já decide as duas separadamente por obra
+ * (`needsArt` e `needsSnapshot`); aqui o `OR` é o que faz a contagem bater com
+ * o que ele vai de fato percorrer.
+ */
+function pendingRows(userId: number) {
+  return db
+    .select({
+      provider: externalIds.provider,
+      externalId: externalIds.externalId,
+      mediaType: externalIds.mediaType,
+    })
+    .from(externalIds)
+    .innerJoin(entries, eq(entries.id, externalIds.entryId))
+    .leftJoin(
+      artCache,
+      and(
+        eq(artCache.provider, externalIds.provider),
+        eq(artCache.externalId, externalIds.externalId),
+        eq(artCache.mediaType, externalIds.mediaType),
+      ),
+    )
+    .leftJoin(
+      titleSnapshots,
+      and(
+        eq(titleSnapshots.provider, externalIds.provider),
+        eq(titleSnapshots.externalId, externalIds.externalId),
+        eq(titleSnapshots.mediaType, externalIds.mediaType),
+      ),
+    )
+    .where(
+      and(
+        eq(entries.userId, userId),
+        or(isNull(artCache.id), isNull(titleSnapshots.provider)),
+      ),
+    )
+    .all()
+}
+
+/**
+ * Quantas identidades externas ainda pedem uma ida à rede.
+ *
+ * **Conta identidades, não obras**, e é o mesmo número que o trabalho vai
+ * percorrer: duas obras que apontam para a mesma identidade são uma busca só —
+ * `warmArt` deduplica antes de começar. Um número maior aqui prometeria
+ * trabalho que não vai acontecer, e o contador da tela terminaria antes do
+ * denominador.
+ */
+export function countPending(userId: number): number {
+  return dedupeTargets(pendingRows(userId)).length
+}
+
+/** Os alvos do "preencher o que falta" — a lista que a contagem acima mede. */
+export function pendingTargets(userId: number): ArtTarget[] {
+  return dedupeTargets(pendingRows(userId))
+}
+
+function dedupeTargets(rows: readonly ArtTarget[]): ArtTarget[] {
+  const seen = new Set<string>()
+  const out: ArtTarget[] = []
+  for (const row of rows) {
+    const key = `${row.mediaType} ${row.provider} ${row.externalId}`
+    if (seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    out.push(row)
+  }
+  return out
 }

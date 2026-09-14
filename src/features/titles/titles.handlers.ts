@@ -3,16 +3,18 @@ import { db } from '../../db/client.js'
 import { entries } from '../../db/schema/entries.js'
 import type { AppRouteHandler } from '../../lib/types.js'
 import { sourceOf } from '../entries/entries.source.js'
-import { startRefresh } from '../import/import.runner.js'
+import { startFilling, startRefresh } from '../import/import.runner.js'
 import { bindingFor, providerBySlug } from '../providers/providers.query.js'
 import { fetchUnits } from '../providers/providers.units.js'
 import {
+  pendingTargets,
   refreshTargets,
   refreshTitles,
   targetsForEntry,
 } from './titles.refresh.js'
 import { type ResolveOutcome, resolveTitle } from './titles.resolve.js'
 import type {
+  FillMissingRoute,
   GetEntryDetailsRoute,
   GetEntryUnitsRoute,
   GetProviderTitleRoute,
@@ -298,6 +300,33 @@ export const refreshLibrary: AppRouteHandler<RefreshLibraryRoute> = (c) => {
   const job = startRefresh(user.id, targets)
   if (!job) {
     return c.json({ message: 'A refresh is already running' }, 409)
+  }
+
+  return c.json({ id: job.id, total: targets.length }, 202)
+}
+
+/**
+ * Preencher o que falta — a rota que serve `Continue` e `Fill in missing`.
+ */
+export const fillMissing: AppRouteHandler<FillMissingRoute> = (c) => {
+  const user = c.get('user')
+  if (!user) {
+    return c.json({ message: 'No active session' }, 401)
+  }
+
+  const targets = pendingTargets(user.id)
+  if (targets.length === 0) {
+    /**
+     * **422 e não 404**: não há o que preencher, e isso é um estado legítimo —
+     * a biblioteca está completa. A tela desabilita o botão antes disso, com a
+     * contagem em zero.
+     */
+    return c.json({ message: 'Nothing is missing' }, 422)
+  }
+
+  const job = startFilling(user.id, targets)
+  if (!job) {
+    return c.json({ message: 'Something is already filling in' }, 409)
   }
 
   return c.json({ id: job.id, total: targets.length }, 202)

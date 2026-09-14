@@ -201,6 +201,9 @@
           },
           "refreshing": {
             "$ref": "#/components/schemas/ImportJob"
+          },
+          "pending": {
+            "type": "integer"
           }
         },
         "required": [
@@ -209,7 +212,8 @@
           "mine",
           "latest",
           "enriching",
-          "refreshing"
+          "refreshing",
+          "pending"
         ]
       },
       "ImportSource": {
@@ -314,6 +318,10 @@
             "type": "string",
             "nullable": true
           },
+          "dismissedAt": {
+            "type": "string",
+            "nullable": true
+          },
           "startedAt": {
             "type": "string"
           },
@@ -339,6 +347,7 @@
           "errorKind",
           "errorParams",
           "cancelRequestedAt",
+          "dismissedAt",
           "startedAt",
           "finishedAt"
         ]
@@ -3630,6 +3639,71 @@
         }
       }
     },
+    "/api/entries/fill": {
+      "post": {
+        "tags": ["Entries"],
+        "responses": {
+          "202": {
+            "description": "The fill-in started, and this is the job to watch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshStarted"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Something is already filling in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Nothing is missing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/export/entries.csv": {
       "get": {
         "tags": ["Export"],
@@ -5052,6 +5126,106 @@
           },
           "409": {
             "description": "There is nothing of yours running to stop",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/import/{id}/dismiss": {
+      "post": {
+        "tags": ["Import"],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "exclusiveMinimum": true
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The job, now dismissed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJob"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such job to dismiss",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/import/history": {
+      "delete": {
+        "tags": ["Import"],
+        "responses": {
+          "200": {
+            "description": "How many finished jobs were removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": ["deleted"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
             "content": {
               "application/json": {
                 "schema": {

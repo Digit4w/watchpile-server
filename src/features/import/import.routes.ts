@@ -82,6 +82,13 @@ const JobSchema = z
       .nullable(),
     /** Quem apertou `Stop`, e quando. Pedido não é estado: o status segue `running` até o laço reparar. */
     cancelRequestedAt: z.string().nullable(),
+    /**
+     * Quando alguém dispensou o aviso deste trabalho interrompido.
+     *
+     * **Dispensar não é apagar** — a linha fica no histórico e o que sai é o
+     * pedido de atenção, como lido e dispensado em `notifications`.
+     */
+    dismissedAt: z.string().nullable(),
     startedAt: z.string(),
     finishedAt: z.string().nullable(),
   })
@@ -165,6 +172,19 @@ const StatusSchema = z
      * botão para saber. `updated` carrega esse número.
      */
     refreshing: JobSchema.nullable(),
+    /**
+     * Quantas identidades externas ainda pedem uma ida à rede — 14/09/2026.
+     *
+     * É o número do rótulo de `Fill in missing`, e **conta identidades, não
+     * obras**: duas obras que apontam para a mesma identidade são uma busca só,
+     * porque o aquecimento deduplica antes de começar. Um número maior aqui
+     * prometeria trabalho que não vai acontecer.
+     *
+     * Zero é estado legítimo e comum — a biblioteca está completa —, e é o que
+     * faz a tela desabilitar o botão com o motivo em vez de aceitar um clique
+     * que o servidor recusaria com 422.
+     */
+    pending: z.number().int(),
   })
   .openapi('ImportStatus')
 
@@ -330,3 +350,66 @@ export type ImportCsvRoute = typeof importCsv
 export type CancelRoute = typeof cancel
 export type ImportAnilistRoute = typeof importAnilist
 export type ImportMalRoute = typeof importMal
+
+/* ── Dispensar e limpar ────────────────────────────────────────────────────── */
+
+/**
+ * Dispensa o aviso de um trabalho interrompido — 14/09/2026.
+ *
+ * A linha **fica** no histórico; o que sai é o pedido de atenção na tela. Só
+ * alcança o que está `failed`: um trabalho vivo não se dispensa, se para.
+ */
+export const dismissJob = createRoute({
+  method: 'post',
+  path: '/{id}/dismiss',
+  tags: ['Import'],
+  request: { params: z.object({ id: z.coerce.number().int().positive() }) },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: JobSchema } },
+      description: 'The job, now dismissed',
+    },
+    401: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'No active session',
+    },
+    404: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'No such job to dismiss',
+    },
+  },
+})
+
+/**
+ * Limpa o histórico de importações desta pessoa — 14/09/2026, pedido do dono.
+ *
+ * **Só o que terminou.** O que está `running` fica, e não por zelo: apagar a
+ * linha de um trabalho vivo deixaria o executor escrevendo contadores numa
+ * linha que não existe, e a reconciliação de zumbis sem a referência que usa
+ * para fechá-lo.
+ *
+ * **Ela não toca no `event_log`** — o que entrou na biblioteca continua
+ * registrado lá. O que se apaga é o relato dos trabalhos, não o efeito deles.
+ */
+export const clearHistory = createRoute({
+  method: 'delete',
+  path: '/history',
+  tags: ['Import'],
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: z.object({ deleted: z.number().int() }),
+        },
+      },
+      description: 'How many finished jobs were removed',
+    },
+    401: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'No active session',
+    },
+  },
+})
+
+export type DismissJobRoute = typeof dismissJob
+export type ClearHistoryRoute = typeof clearHistory
