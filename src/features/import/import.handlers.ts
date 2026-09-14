@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { db } from '../../db/client.js'
 import { providers } from '../../db/schema/providers.js'
+import { logger } from '../../lib/logger.js'
 import type { AppRouteHandler } from '../../lib/types.js'
 import { resolveCredential } from '../providers/providers.credentials.js'
 import { countPending } from '../titles/titles.refresh.js'
@@ -56,7 +57,10 @@ function parseJson<T>(raw: string, fallback: T): T {
     return parsed === null || typeof parsed !== 'object'
       ? fallback
       : (parsed as T)
-  } catch {
+  } catch (error) {
+    // Nós gravamos esta coluna: JSON quebrado é defeito NOSSO, mesmo com a tela
+    // sobrevivendo com o valor vazio.
+    logger.error({ err: error }, 'import job column is not valid JSON')
     return fallback
   }
 }

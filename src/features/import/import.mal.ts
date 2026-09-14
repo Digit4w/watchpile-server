@@ -1,4 +1,5 @@
 import type { entries } from '../../db/schema/entries.js'
+import { logger } from '../../lib/logger.js'
 import {
   ImportFailure,
   type ImportItem,
@@ -160,8 +161,13 @@ async function fetchPage(
     response = await fetchImpl(url, {
       headers: { 'X-MAL-Client-ID': clientId, Accept: 'application/json' },
     })
-  } catch {
+  } catch (error) {
     // A rede caiu. Não é recusa do provedor, e a saída de quem lê é esperar.
+    // A causa não cabe no `kind`, então é o log que a guarda.
+    logger.warn(
+      { source: 'mal', kind, err: error },
+      'import source unreachable',
+    )
     throw new ImportFailure('source-down')
   }
 

@@ -1,4 +1,5 @@
 import type { FieldMap } from '../../db/schema/providers.js'
+import { logger } from '../../lib/logger.js'
 import { prepareRequest } from './providers.auth.js'
 import { cacheKeyFor, readCache, writeCache } from './providers.cache.js'
 import {
@@ -165,6 +166,10 @@ export async function fetchDetail({
     try {
       return { ok: true, body: JSON.parse(cached), cached: true }
     } catch {
+      logger.warn(
+        { provider: provider.slug },
+        'cached provider detail is not JSON',
+      )
       return { ok: false, reason: 'provider-error' }
     }
   }
@@ -218,13 +223,22 @@ export async function fetchDetail({
       forgetToken(provider.slug)
     }
     if (!response.ok) {
+      logger.warn(
+        { provider: provider.slug, status: response.status },
+        'provider refused detail',
+      )
       return { ok: false, reason: 'provider-error' }
     }
 
     body = await response.text()
-  } catch {
+  } catch (error) {
     // A mensagem não sobe: a URL montada carrega a chave na query quando o
-    // estilo é `query-key`. Mesma regra do "testar conexão".
+    // estilo é `query-key`. Mesma regra do "testar conexão". O log a recebe
+    // redigida.
+    logger.warn(
+      { provider: provider.slug, err: error },
+      'provider detail unreachable',
+    )
     return { ok: false, reason: 'unreachable' }
   }
 
@@ -235,6 +249,7 @@ export async function fetchDetail({
   try {
     return { ok: true, body: JSON.parse(body), cached: false }
   } catch {
+    logger.warn({ provider: provider.slug }, 'provider detail is not JSON')
     return { ok: false, reason: 'provider-error' }
   }
 }

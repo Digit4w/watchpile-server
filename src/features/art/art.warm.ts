@@ -1,5 +1,6 @@
 import { setImmediate as yieldToLoop } from 'node:timers/promises'
 import { env } from '../../env.js'
+import { logger } from '../../lib/logger.js'
 import {
   bindingFor,
   type ProviderRow,
@@ -309,7 +310,14 @@ export async function warmArt(
          * com uma obra que talvez ninguém abra.
          */
       } catch (error) {
-        console.error('[art] warm failed for %s', target.externalId, error)
+        logger.error(
+          {
+            provider: target.provider,
+            externalId: target.externalId,
+            err: error,
+          },
+          'art warm failed',
+        )
       }
 
       await sleep(PAUSE_MS)
@@ -337,7 +345,7 @@ export function warmArtInBackground(targets: readonly ArtTarget[]): void {
   }
 
   void warmArt(targets).catch((error: unknown) => {
-    console.error('[art] warm failed', error)
+    logger.error({ err: error }, 'art warm failed')
   })
 }
 

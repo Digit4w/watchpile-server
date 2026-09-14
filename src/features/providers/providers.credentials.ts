@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { registerSecret } from '../../lib/log-redact.js'
+import { logger } from '../../lib/logger.js'
 import { EMBEDDED_CREDENTIALS } from './providers.embedded.js'
 
 /**
@@ -90,8 +91,18 @@ function resolveFromChain(
       if (contents) {
         return { value: contents, source: 'file' }
       }
-    } catch {
-      // segue a cadeia
+    } catch (error) {
+      // Segue a cadeia, mas avisa: é erro de quem hospeda, e sem esta linha a
+      // única pista seria a tela dizendo que a chave veio de outro lugar. O
+      // CAMINHO vai pro log, nunca o conteúdo.
+      logger.warn(
+        {
+          variable: `${envName}_FILE`,
+          path: filePath,
+          code: (error as NodeJS.ErrnoException).code,
+        },
+        'credential file unreadable',
+      )
     }
   }
 
