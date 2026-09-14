@@ -11,7 +11,7 @@ the spirit of Yamtrack, Trakt and Suwayomi. One server, many clients: this
 repository exposes a documented HTTP API (`openapi.json`) and, by default, also
 serves the official web client.
 
-> **Current state: `v0.2.0`, a public test release.** There is a
+> **Current state: `v0.2.1`, a public test release.** There is a
 > published image and there are ready-made installers — the sections below lead
 > with those, and building from source stays documented right after.
 >
@@ -43,14 +43,14 @@ database container — SQLite is a file in the volume.
 
 ```bash
 docker run -d --name watchpile -p 3210:3210 -v ./data:/data \
-  ghcr.io/digit4w/watchpile:0.2.0
+  ghcr.io/digit4w/watchpile:0.2.1
 ```
 
 Or grab just the `compose.yaml` from this repository and swap `build: .` for
-`image: ghcr.io/digit4w/watchpile:0.2.0`. **You don't need to clone anything** —
+`image: ghcr.io/digit4w/watchpile:0.2.1`. **You don't need to clone anything** —
 the image already ships the web client inside.
 
-**Two tags, and the choice is about upgrading:** `:0.2.0` is what you pin in a
+**Two tags, and the choice is about upgrading:** `:0.2.1` is what you pin in a
 `compose.yaml` that must not change on its own; `:latest` follows along. While
 the project is in `0.x`, `:latest` may bring a breaking change — see the warning
 above.
@@ -224,6 +224,9 @@ them is mandatory.
 | `LOG_LEVEL` | `info` | level of the structured log (pino) |
 | `WATCHPILE_DB_PATH` | `./data/watchpile.db` | path to the SQLite file |
 | `WATCHPILE_ART_CACHE_PATH` | `art/` next to the database | where cached artwork is stored |
+| `WATCHPILE_LOG_PATH` | `logs/` next to the database | where the diagnostic log file is written (the admin reads and downloads it in Settings → Logs) |
+| `WATCHPILE_LOG_MAX_MB` | `5` | size of one log file before it rotates |
+| `WATCHPILE_LOG_FILES` | `3` | how many log files are kept, counting the current one |
 | `WATCHPILE_SERVE_CLIENT` | `true` | whether the server also serves the web client build |
 | `WATCHPILE_CLIENT_DIST_PATH` | `./client-dist` | where to look for the client build, when `WATCHPILE_SERVE_CLIENT=true` |
 | `PUID` / `PGID` | `1000` / `1000` | (Docker only) user the process runs as inside the container |
