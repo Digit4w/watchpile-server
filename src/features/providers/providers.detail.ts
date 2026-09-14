@@ -1,4 +1,5 @@
 import type { FieldMap } from '../../db/schema/providers.js'
+import { logger } from '../../lib/logger.js'
 import { prepareRequest } from './providers.auth.js'
 import { cacheKeyFor, readCache, writeCache } from './providers.cache.js'
 import {
@@ -49,6 +50,8 @@ export async function fetchDetail({
   externalId,
   pathOverride = null,
   waitForTokenMs = 0,
+  background = false,
+  fresh = false,
   fetchImpl = fetch,
 }: {
   provider: ProviderRow
@@ -82,6 +85,28 @@ export async function fetchDetail({
    * consulta; um `<img>` não tem tecla seguinte.
    */
   waitForTokenMs?: number
+  /**
+   * Este pedido é de trabalho de FUNDO — o aquecimento, que roda sem ninguém
+   * esperando (`art.warm.ts`). Ver `reserveToken`: ele deixa um colchão de
+   * fichas intocado para quem tem uma tela aberta, e nunca gasta ficha do
+   * futuro. **Declarado por quem chama, nunca deduzido do prazo** — prazo longo
+   * é um PROXY de "ninguém está esperando", e proxy acerta até o caso em que os
+   * dois se separam.
+   */
+  background?: boolean
+  /**
+   * Ignora o que estiver no `provider_cache` e vai à rede — 13/09/2026.
+   *
+   * **Quem pede isso é o `Refresh`**, e sem ele o botão mentiria: o cache tem
+   * validade de 6h, então clicar "atualizar" dentro dessa janela devolveria
+   * exatamente o que já estava na tela. Um controle que a pessoa aperta de
+   * propósito não pode responder com a resposta velha.
+   *
+   * **Ele pula a LEITURA, nunca a escrita.** O que voltar continua enchendo o
+   * cache — seria perverso gastar a ida à rede e deixar o próximo pedido
+   * pagá-la de novo.
+   */
+  fresh?: boolean
   /** Injetável só para teste; produção usa o `fetch` global do Node. */
   fetchImpl?: typeof fetch
 }): Promise<DetailOutcome> {
@@ -136,16 +161,27 @@ export async function fetchDetail({
     provider.auth.style === 'query-key' ? provider.auth.param : null
   const key = cacheKeyFor(prepared.request.url, keyParam, prepared.request.body)
 
-  const cached = readCache(provider.slug, key)
+  const cached = fresh ? null : readCache(provider.slug, key)
   if (cached !== null) {
     try {
       return { ok: true, body: JSON.parse(cached), cached: true }
     } catch {
+      logger.warn(
+        { provider: provider.slug },
+        'cached provider detail is not JSON',
+      )
       return { ok: false, reason: 'provider-error' }
     }
   }
 
-  if (!(await awaitToken(provider.slug, provider.rateLimit, waitForTokenMs))) {
+  if (
+    !(await awaitToken(
+      provider.slug,
+      provider.rateLimit,
+      waitForTokenMs,
+      background,
+    ))
+  ) {
     return { ok: false, reason: 'rate-limited' }
   }
 
@@ -187,13 +223,22 @@ export async function fetchDetail({
       forgetToken(provider.slug)
     }
     if (!response.ok) {
+      logger.warn(
+        { provider: provider.slug, status: response.status },
+        'provider refused detail',
+      )
       return { ok: false, reason: 'provider-error' }
     }
 
     body = await response.text()
-  } catch {
+  } catch (error) {
     // A mensagem não sobe: a URL montada carrega a chave na query quando o
-    // estilo é `query-key`. Mesma regra do "testar conexão".
+    // estilo é `query-key`. Mesma regra do "testar conexão". O log a recebe
+    // redigida.
+    logger.warn(
+      { provider: provider.slug, err: error },
+      'provider detail unreachable',
+    )
     return { ok: false, reason: 'unreachable' }
   }
 
@@ -204,6 +249,7 @@ export async function fetchDetail({
   try {
     return { ok: true, body: JSON.parse(body), cached: false }
   } catch {
+    logger.warn({ provider: provider.slug }, 'provider detail is not JSON')
     return { ok: false, reason: 'provider-error' }
   }
 }

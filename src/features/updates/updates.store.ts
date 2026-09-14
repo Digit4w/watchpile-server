@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { db } from '../../db/client.js'
 import { settings } from '../../db/schema/settings.js'
+import { logger } from '../../lib/logger.js'
 import { APP_VERSION } from '../../lib/version.js'
 import { isNewer } from './updates.compare.js'
 import { readReleases } from './updates.feed.js'
@@ -138,5 +139,7 @@ export function checkIfStale(fetchImpl: typeof fetch = fetch): void {
    * processo por causa de uma checagem de versão. É a mesma régua do
    * aquecimento do cache de arte.
    */
-  void runCheck(fetchImpl).catch(() => {})
+  void runCheck(fetchImpl).catch((error: unknown) => {
+    logger.error({ err: error }, 'update check failed')
+  })
 }

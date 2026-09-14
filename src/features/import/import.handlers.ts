@@ -1,8 +1,10 @@
 import { eq } from 'drizzle-orm'
 import { db } from '../../db/client.js'
 import { providers } from '../../db/schema/providers.js'
+import { logger } from '../../lib/logger.js'
 import type { AppRouteHandler } from '../../lib/types.js'
 import { resolveCredential } from '../providers/providers.credentials.js'
+import { countPending } from '../titles/titles.refresh.js'
 import { anilistSource } from './import.anilist.js'
 import { createApplier } from './import.apply.js'
 import { csvSource } from './import.csv.js'
@@ -10,6 +12,8 @@ import * as jobs from './import.jobs.js'
 import { malSource } from './import.mal.js'
 import type {
   CancelRoute,
+  ClearHistoryRoute,
+  DismissJobRoute,
   ImportAnilistRoute,
   ImportCsvRoute,
   ImportMalRoute,
@@ -53,7 +57,10 @@ function parseJson<T>(raw: string, fallback: T): T {
     return parsed === null || typeof parsed !== 'object'
       ? fallback
       : (parsed as T)
-  } catch {
+  } catch (error) {
+    // Nós gravamos esta coluna: JSON quebrado é defeito NOSSO, mesmo com a tela
+    // sobrevivendo com o valor vazio.
+    logger.error({ err: error }, 'import job column is not valid JSON')
     return fallback
   }
 }
@@ -61,6 +68,7 @@ function parseJson<T>(raw: string, fallback: T): T {
 function toPublic(row: jobs.Job) {
   return {
     id: row.id,
+    kind: row.kind,
     source: row.source as ImportSourceSlug,
     mode: row.mode,
     status: row.status,
@@ -77,6 +85,7 @@ function toPublic(row: jobs.Job) {
       ? parseJson<Record<string, string | number>>(row.errorParams, {})
       : null,
     cancelRequestedAt: row.cancelRequestedAt?.toISOString() ?? null,
+    dismissedAt: row.dismissedAt?.toISOString() ?? null,
     startedAt: row.startedAt.toISOString(),
     finishedAt: row.finishedAt?.toISOString() ?? null,
   }
@@ -148,8 +157,23 @@ export const status: AppRouteHandler<StatusRoute> = (c) => {
 
   reconcileInterrupted()
 
-  const running = jobs.running()
+  const running = jobs.running('import')
   const latest = jobs.latestFor(user.id)
+
+  /**
+   * **O aquecimento é a SEGUNDA fase, e tem contador próprio** — 13/09/2026.
+   *
+   * Ele não entra em `running`: aquela pergunta é "o recurso está ocupado?", e
+   * a resposta dela governa se alguém pode começar a importar. Aquecer não
+   * ocupa o recurso — é I/O de rede com pausa —, então somá-lo ali recusaria
+   * imports por até uma hora depois do anterior ter terminado.
+   *
+   * **E é o da PESSOA, não o da instalação.** `running` é da instalação porque
+   * o que ele impede é de todo mundo; este é um trabalho sobre a biblioteca de
+   * quem importou, e é só a ela que o número diz alguma coisa.
+   */
+  const enriching = jobs.latestOfKindFor(user.id, 'enrich')
+  const refreshing = jobs.latestOfKindFor(user.id, 'refresh')
 
   return c.json(
     {
@@ -157,6 +181,38 @@ export const status: AppRouteHandler<StatusRoute> = (c) => {
       running: running ? toPublic(running) : null,
       mine: running?.userId === user.id,
       latest: latest ? toPublic(latest) : null,
+      /**
+       * O aquecimento que a tela precisa mostrar — 14/09/2026.
+       *
+       * **Dois estados, não um:** o que está rodando, e o que MORREU no meio
+       * sem ninguém ter dispensado. O segundo é o que faltava — um container
+       * reiniciado fecha a linha como `interrupted` e, até aqui, ninguém ficava
+       * sabendo que centenas de obras tinham ficado sem arte.
+       *
+       * O que terminou bem não volta: não há o que mostrar depois, porque a
+       * arte que faltar cai no caminho sob demanda. O interrompido volta
+       * justamente porque há — obras esperando, e uma ação que resolve.
+       */
+      enriching:
+        enriching &&
+        (enriching.status === 'running' ||
+          (enriching.status === 'failed' && enriching.dismissedAt === null))
+          ? toPublic(enriching)
+          : null,
+      /**
+       * A varredura aparece **mesmo terminada**, ao contrário do aquecimento.
+       * A diferença é que ela tem RESULTADO: quantas obras mudaram de total é o
+       * que a pessoa apertou o botão para saber, e sumir ao acabar deixaria o
+       * gesto sem resposta. O aquecimento não tem o que mostrar depois, porque
+       * a arte que faltar cai no caminho sob demanda.
+       */
+      refreshing: refreshing ? toPublic(refreshing) : null,
+      /**
+       * O número do rótulo de `Fill in missing` — identidades, não obras (ver
+       * `countPending`). Zero desabilita o botão com o motivo, em vez de
+       * aceitar um clique que a rota recusaria com 422.
+       */
+      pending: countPending(user.id),
     },
     200,
   )
@@ -352,4 +408,35 @@ export const importMal: AppRouteHandler<ImportMalRoute> = (c) => {
   return outcome.ok
     ? c.json(toPublic(outcome.job), 202)
     : c.json({ message: outcome.message }, outcome.status)
+}
+
+/** Dispensa o aviso de um trabalho interrompido. A linha fica no histórico. */
+export const dismissJob: AppRouteHandler<DismissJobRoute> = (c) => {
+  const user = c.get('user')
+  if (!user) {
+    return c.json({ message: 'No active session' }, 401)
+  }
+
+  const { id } = c.req.valid('param')
+  if (!jobs.dismiss(id, user.id)) {
+    /**
+     * Mesma resposta para "não existe", "é de outra pessoa" e "não está
+     * falhado" — separar contaria o acervo alheio, e é a régua que esta feature
+     * já segue em `requestCancel`.
+     */
+    return c.json({ message: 'No such job to dismiss' }, 404)
+  }
+
+  const job = jobs.byId(id)
+  return c.json(job ? toPublic(job) : ({} as never), 200)
+}
+
+/** Limpa o histórico — só o que terminou. Ver `jobs.clearHistory`. */
+export const clearHistory: AppRouteHandler<ClearHistoryRoute> = (c) => {
+  const user = c.get('user')
+  if (!user) {
+    return c.json({ message: 'No active session' }, 401)
+  }
+
+  return c.json({ deleted: jobs.clearHistory(user.id) }, 200)
 }

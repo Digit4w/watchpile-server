@@ -1,6 +1,8 @@
 import { setImmediate as yieldToLoop } from 'node:timers/promises'
-import { type ArtTarget, warmArtInBackground } from '../art/art.warm.js'
+import { logger } from '../../lib/logger.js'
+import { type ArtTarget, warmArt } from '../art/art.warm.js'
 import * as notifications from '../notifications/notifications.store.js'
+import { refreshTitles } from '../titles/titles.refresh.js'
 import * as jobs from './import.jobs.js'
 import {
   type ApplyItem,
@@ -76,6 +78,10 @@ export async function run(
     const cancelled = await applyAll(jobId, reading.items, apply, mode)
 
     jobs.finish(jobId, { status: cancelled ? 'cancelled' : 'done' })
+    logger.info(
+      { jobId, items: reading.items.length, cancelled },
+      'import finished',
+    )
     if (!cancelled) {
       notifyFinished(jobId)
       /**
@@ -87,11 +93,13 @@ export async function run(
        * minutos dizendo que ainda não acabou, a notificação mentir sobre o que
        * terminou, e uma CDN fora do ar reprovar um import que deu certo.
        *
-       * O `catch` é obrigatório e não é zelo: esta promessa não tem dono, e uma
-       * rejeição solta vira `unhandledRejection` — o processo morreria por causa
-       * de um pôster.
+       * **O que mudou em 13/09/2026 é que ele deixou de ser MUDO.** A decisão
+       * acima continua inteira — ele segue fora do contador do import —, e o
+       * que ele ganha é um contador PRÓPRIO: duas fases, dois números. Antes a
+       * pessoa lia "terminou", fechava a tela, e o servidor passava de 18 a 52
+       * minutos buscando arte sem nada dizer.
        */
-      warmArtInBackground(artTargets(reading.items))
+      startEnriching(jobId, artTargets(reading.items))
     }
   } catch (error) {
     const failure =
@@ -99,9 +107,14 @@ export async function run(
         ? error
         : new ImportFailure('unexpected', {})
 
-    if (!(error instanceof ImportFailure)) {
+    if (error instanceof ImportFailure) {
+      // Falha tipada é da FONTE (perfil privado, API fora): a tela já diz qual,
+      // e o log guarda o `kind` pra quem vier perguntar. `params` fica de fora,
+      // porque carrega o nome de usuário de quem importou.
+      logger.warn({ jobId, kind: failure.kind }, 'import failed')
+    } else {
       // O `kind` não promete causa; o rastro fica onde rastro mora.
-      console.error('[import] job %d failed unexpectedly', jobId, error)
+      logger.error({ jobId, err: error }, 'import failed unexpectedly')
     }
 
     jobs.finish(jobId, {
@@ -113,6 +126,230 @@ export async function run(
   } finally {
     aliveHere.delete(jobId)
   }
+}
+
+/**
+ * **Preencher o que falta** — 14/09/2026, pedido do dono.
+ *
+ * ── Por que ela é `enrich`, e não um quarto tipo ───────────────────────────
+ * Porque é exatamente o mesmo trabalho que o import dispara ao terminar:
+ * `warmArt` sem `force` e sem `fresh`, que **pula o que já está guardado**. O
+ * que muda é só o gatilho — lá é consequência de um import, aqui é alguém
+ * pedindo. Um `kind` novo separaria duas linhas idênticas no banco para
+ * registrar quem apertou o botão, e isso não muda nada do que a tela mostra.
+ *
+ * ── Uma ação, duas situações, e é a mesma por construção ───────────────────
+ * O dono pediu duas coisas: lidar com stops repentinos, e poder disparar o
+ * aquecimento à mão. **São a mesma.** Aquecer pula o que já está feito, então
+ * "continuar de onde parou" não precisa saber onde parou — basta rodar de novo,
+ * e ele acha o que falta. É por isso que `Continue` e `Fill in missing`
+ * chamam esta função sem diferença nenhuma.
+ *
+ * E ela **não é** o `Refresh`: aquele passa `force: true, fresh: true` e relê a
+ * biblioteca inteira à força, custando tudo em vez de custar só o buraco.
+ */
+export function startFilling(
+  userId: number,
+  targets: readonly ArtTarget[],
+): jobs.Job | null {
+  if (targets.length === 0) {
+    return null
+  }
+
+  let job: jobs.Job
+  try {
+    job = jobs.start({
+      userId,
+      /** Não veio de fonte nenhuma — como a varredura (`0054`). */
+      source: null,
+      mode: 'skip',
+      kind: 'enrich',
+    })
+  } catch (error) {
+    // Já há um aquecimento rodando: o índice único recusou, e isso É a resposta.
+    logger.debug({ userId, err: error }, 'fill job not started')
+    return null
+  }
+
+  aliveHere.add(job.id)
+
+  void warmArt(targets, undefined, {
+    begin: (total) => jobs.setTotal(job.id, total),
+    tick: (done) => jobs.setProcessed(job.id, done),
+    cancelled: () => jobs.cancelRequested(job.id),
+  })
+    .then(() => {
+      jobs.finish(job.id, {
+        status: jobs.cancelRequested(job.id) ? 'cancelled' : 'done',
+      })
+    })
+    .catch((error: unknown) => {
+      logger.error({ jobId: job.id, err: error }, 'fill job failed')
+      jobs.finish(job.id, { status: 'failed', errorKind: 'unexpected' })
+    })
+    .finally(() => {
+      aliveHere.delete(job.id)
+    })
+
+  return job
+}
+
+/**
+ * A VARREDURA: reler o provedor para a biblioteca inteira — 13/09/2026,
+ * item 11(c) da fila do dono.
+ *
+ * ── Sob demanda, e por que isso NÃO fura o brief 3.1 ────────────────────────
+ * A 3.1 recusa infraestrutura de fila, e o argumento que deixou o aquecimento
+ * passar foi ser um laço sem estado que termina sozinho. Este tem estado — a
+ * linha do job —, e mesmo assim não é fila: **não há agenda, não há retentativa,
+ * não há trabalho esperando para ser pego**. Quem o dispara é um gesto, e ele
+ * morre quando acaba.
+ *
+ * **O cron interno vem depois** (decisão do dono, 13/09/2026), e é ele que vai
+ * pedir a conversa sobre a 3.1. O que este ciclo deixa pronto para ele é o
+ * corte por idade em `refreshTargets` — ver aquele módulo.
+ *
+ * ── Ele é `enrich` com outra pergunta, e por isso não é `enrich` ────────────
+ * Mesmo percurso, mesma peça (`warmArt`), `kind` diferente. O índice único por
+ * tipo deixa os dois coexistirem: recusar a varredura que alguém pediu porque
+ * um aquecimento automático ainda roda seria o gesto perdendo para o efeito
+ * colateral.
+ */
+export function startRefresh(
+  userId: number,
+  targets: readonly ArtTarget[],
+): jobs.Job | null {
+  if (targets.length === 0) {
+    return null
+  }
+
+  let job: jobs.Job
+  try {
+    job = jobs.start({
+      userId,
+      /** Nula: uma varredura relê vários provedores, não uma fonte. */
+      source: null,
+      /**
+       * `mode` não diz nada aqui — não há colisão a resolver, porque nada
+       * entra. Fica no valor que não promete escrita destrutiva.
+       */
+      mode: 'skip',
+      kind: 'refresh',
+    })
+  } catch (error) {
+    // Já há uma varredura rodando: o índice único recusou, e isso é a resposta.
+    logger.debug({ userId, err: error }, 'refresh job not started')
+    return null
+  }
+
+  aliveHere.add(job.id)
+
+  void refreshTitles(targets, {
+    progress: {
+      begin: (total) => jobs.setTotal(job.id, total),
+      tick: (done) => jobs.setProcessed(job.id, done),
+      cancelled: () => jobs.cancelRequested(job.id),
+    },
+  })
+    .then((updated) => {
+      /**
+       * **Quantas obras mudaram de total vai em `updated`**, que é a coluna que
+       * já existe com esse nome e esse significado no import. Reusar é o que
+       * deixa a tela ler os dois trabalhos com a mesma peça.
+       */
+      jobs.addProgress(job.id, {
+        processed: 0,
+        added: 0,
+        skipped: 0,
+        updated,
+        unmatched: 0,
+      })
+      jobs.finish(job.id, {
+        status: jobs.cancelRequested(job.id) ? 'cancelled' : 'done',
+      })
+    })
+    .catch((error: unknown) => {
+      logger.error({ jobId: job.id, err: error }, 'refresh job failed')
+      jobs.finish(job.id, { status: 'failed', errorKind: 'unexpected' })
+    })
+    .finally(() => {
+      aliveHere.delete(job.id)
+    })
+
+  return job
+}
+
+/**
+ * A SEGUNDA fase: buscar arte e snapshot do que o import trouxe, contando.
+ *
+ * ── Por que ela é um job, e não um laço solto ───────────────────────────────
+ * Porque a pergunta "em que pé está?" precisa ser respondível de fora do laço,
+ * e a resposta precisa sobreviver a quem fecha a aba — que é o mesmo argumento
+ * que fez `import_jobs` existir. Ela reusa a tabela inteira em vez de ganhar a
+ * sua: `status`, `total`, `processed`, o carimbo de cancelamento e a
+ * reconciliação de zumbi já estão lá.
+ *
+ * ── Nada aqui é esperado por ninguém ────────────────────────────────────────
+ * `run` já respondeu, o job de import já fechou e a notificação já saiu. O
+ * `catch` externo é obrigatório pelo mesmo motivo de sempre: esta promessa não
+ * tem dono, e uma rejeição solta vira `unhandledRejection` — o processo morreria
+ * por causa de um pôster.
+ */
+function startEnriching(importJobId: number, targets: ArtTarget[]): void {
+  if (targets.length === 0) {
+    return
+  }
+
+  const parent = jobs.byId(importJobId)
+  if (!parent) {
+    return
+  }
+
+  let job: jobs.Job
+  try {
+    job = jobs.start({
+      userId: parent.userId,
+      // A procedência: de qual importação este aquecimento veio.
+      source: parent.source,
+      mode: parent.mode,
+      kind: 'enrich',
+    })
+  } catch (error) {
+    /**
+     * **O índice único recusando é um caminho normal, não um defeito.** Dois
+     * imports em sequência rápida deixam o aquecimento do primeiro ainda vivo,
+     * e o segundo não abre o seu. A arte que ficar de fora cai na rede de
+     * segurança do caminho sob demanda, que é a mesma de sempre.
+     */
+    logger.debug({ importJobId, err: error }, 'enrich job not started')
+    return
+  }
+
+  aliveHere.add(job.id)
+
+  void warmArt(targets, undefined, {
+    begin: (total) => jobs.setTotal(job.id, total),
+    /**
+     * **O contador anda de um em um, e isso é barato AQUI.** Uma escrita por
+     * obra seria cara no import, onde o lote inteiro leva 14ms; aqui cada volta
+     * já custa centenas de milissegundos de rede, então a escrita some no ruído.
+     */
+    tick: (done) => jobs.setProcessed(job.id, done),
+    cancelled: () => jobs.cancelRequested(job.id),
+  })
+    .then((written) => {
+      jobs.finish(job.id, {
+        status: jobs.cancelRequested(job.id) ? 'cancelled' : 'done',
+      })
+      return written
+    })
+    .catch((error: unknown) => {
+      logger.error({ jobId: job.id, err: error }, 'enrich job failed')
+      jobs.finish(job.id, { status: 'failed', errorKind: 'unexpected' })
+    })
+    .finally(() => {
+      aliveHere.delete(job.id)
+    })
 }
 
 /**
@@ -215,7 +452,13 @@ function notifyFinished(jobId: number): void {
     severity: 'info',
     kind: 'import-finished',
     params: {
-      source: job.source,
+      /**
+       * **Só o `import` notifica**, e ele sempre tem fonte — `source` só é nula
+       * na varredura (`0054`), que não emite notificação nenhuma. O `??` é a
+       * rede para o dia em que isso deixar de ser verdade: uma frase com a
+       * palavra errada é melhor que uma notificação que não nasce.
+       */
+      source: job.source ?? 'csv',
       added: job.added,
       problemCount: job.problemCount,
     },
@@ -236,7 +479,7 @@ function notifyFailed(jobId: number, reason: string): void {
     userId: job.userId,
     severity: 'warning',
     kind: 'import-failed',
-    params: { source: job.source, reason },
+    params: { source: job.source ?? 'csv', reason },
   })
 }
 

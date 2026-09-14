@@ -3,6 +3,7 @@ import entriesRouter from './features/entries/entries.index.js'
 import exportRouter from './features/export/export.index.js'
 import homeWidgetsRouter from './features/home-widgets/home-widgets.index.js'
 import importRouter from './features/import/import.index.js'
+import logsRouter from './features/logs/logs.index.js'
 import mediaTypesRouter from './features/media-types/media-types.index.js'
 import networkRouter from './features/network/network.index.js'
 import notificationsRouter from './features/notifications/notifications.index.js'
@@ -31,6 +32,7 @@ app.route('/api/entries', entriesRouter)
 app.route('/api/export', exportRouter)
 app.route('/api/home-widgets', homeWidgetsRouter)
 app.route('/api/import', importRouter)
+app.route('/api/logs', logsRouter)
 app.route('/api/media-types', mediaTypesRouter)
 app.route('/api/meta', metaRouter)
 app.route('/api/network', networkRouter)

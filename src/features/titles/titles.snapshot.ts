@@ -167,6 +167,8 @@ export async function captureSnapshot({
   externalId,
   mediaType,
   waitForTokenMs,
+  background = false,
+  fresh = false,
   fetchImpl,
 }: {
   provider: ProviderRow
@@ -174,6 +176,10 @@ export async function captureSnapshot({
   externalId: string
   mediaType: string
   waitForTokenMs?: number
+  /** Ver `fetchDetail`: o aquecimento respeita o colchão do primeiro plano. */
+  background?: boolean
+  /** Ver `fetchDetail`: o `Refresh` ignora o cache de 6h e vai à rede. */
+  fresh?: boolean
   fetchImpl?: typeof fetch
 }): Promise<boolean> {
   const detail = await fetchDetail({
@@ -181,6 +187,8 @@ export async function captureSnapshot({
     binding,
     externalId,
     waitForTokenMs,
+    background,
+    fresh,
     fetchImpl,
   })
 

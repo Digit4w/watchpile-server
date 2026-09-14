@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, notInArray, sql } from 'drizzle-orm'
+import { and, desc, eq, isNull, ne, notInArray, sql } from 'drizzle-orm'
 import { db } from '../../db/client.js'
 import { importJobs } from '../../db/schema/import-jobs.js'
 import type {
@@ -16,6 +16,7 @@ import type {
  */
 
 export type Job = typeof importJobs.$inferSelect
+export type JobKind = Job['kind']
 
 /**
  * Quantos itens por lote.
@@ -43,8 +44,11 @@ export const MAX_STORED_PROBLEMS = 100
 
 export function start(input: {
   userId: number
-  source: ImportSourceSlug
+  /** Nula na varredura, que não vem de fonte nenhuma. */
+  source: ImportSourceSlug | null
   mode: ImportMode
+  /** `import` por omissão — o `enrich` é criado pelo runner ao fechar aquele. */
+  kind?: JobKind
 }): Job {
   // Sem consultar-antes-de-inserir: quem garante "uma por vez" é o índice
   // único parcial (`0035`), e um `SELECT` antes deixaria a corrida de pé.
@@ -61,12 +65,33 @@ export function start(input: {
   return job
 }
 
-/** O job em andamento da instalação — no máximo um, por construção. */
-export function running(): Job | undefined {
+/**
+ * O job de um tipo em andamento na instalação — no máximo um, por construção.
+ *
+ * **O tipo é obrigatório desde 13/09/2026**, e não tem padrão de propósito: com
+ * duas espécies de trabalho vivas ao mesmo tempo, uma chamada sem tipo devolve
+ * *alguma* delas, e quem pergunta "tem import rodando?" receberia um `enrich`
+ * como se fosse. Um argumento que o compilador cobra é mais barato que essa
+ * confusão em produção.
+ */
+export function running(kind: JobKind): Job | undefined {
   return db
     .select()
     .from(importJobs)
-    .where(eq(importJobs.status, 'running'))
+    .where(and(eq(importJobs.status, 'running'), eq(importJobs.kind, kind)))
+    .get()
+}
+
+/** O trabalho mais recente de um tipo, desta pessoa — rodando ou não. */
+export function latestOfKindFor(
+  userId: number,
+  kind: JobKind,
+): Job | undefined {
+  return db
+    .select()
+    .from(importJobs)
+    .where(and(eq(importJobs.userId, userId), eq(importJobs.kind, kind)))
+    .orderBy(desc(importJobs.startedAt), desc(importJobs.id))
     .get()
 }
 
@@ -75,7 +100,7 @@ export function latestFor(userId: number): Job | undefined {
   return db
     .select()
     .from(importJobs)
-    .where(eq(importJobs.userId, userId))
+    .where(and(eq(importJobs.userId, userId), eq(importJobs.kind, 'import')))
     .orderBy(desc(importJobs.startedAt), desc(importJobs.id))
     .get()
 }
@@ -86,6 +111,23 @@ export function byId(id: number): Job | undefined {
 
 export function setTotal(id: number, total: number): void {
   db.update(importJobs).set({ total }).where(eq(importJobs.id, id)).run()
+}
+
+/**
+ * O numerador, ESCRITO POR INTEIRO — 13/09/2026, para o aquecimento.
+ *
+ * **Difere de `addProgress`, que soma no SQL, e a diferença é de quem produz o
+ * número.** No import o executor escreve um DELTA por lote, e somar no banco é
+ * o que impede a leitura-soma-escrita de atropelar o `Stop` que chegou no meio.
+ * Aqui quem conta é o laço do aquecimento, que já sabe o acumulado — mandar um
+ * delta obrigaria a manter a mesma conta nos dois lados, e a régua conhecida é
+ * que *duas contas da mesma coisa é como uma fica pra trás*.
+ *
+ * Nada mais escreve `processed` de uma linha `enrich`, então não há com o que
+ * correr.
+ */
+export function setProcessed(id: number, processed: number): void {
+  db.update(importJobs).set({ processed }).where(eq(importJobs.id, id)).run()
 }
 
 /**
@@ -232,6 +274,57 @@ export function reconcileInterrupted(aliveHere: Iterable<number>): number {
         alive.length > 0 ? notInArray(importJobs.id, alive) : undefined,
       ),
     )
+    .returning({ id: importJobs.id })
+    .all().length
+}
+
+/**
+ * Dispensa um trabalho interrompido — 14/09/2026.
+ *
+ * **Dispensar não é apagar**, e é a mesma distinção que `notifications` faz
+ * entre lido e dispensado: a linha fica no histórico, e o que sai é o aviso da
+ * tela. O que aconteceu aconteceu; o que se tira é o pedido de atenção.
+ *
+ * Só alcança o que está `failed` — um trabalho vivo não se dispensa, se para.
+ */
+export function dismiss(id: number, userId: number): boolean {
+  return (
+    db
+      .update(importJobs)
+      .set({ dismissedAt: new Date() })
+      .where(
+        and(
+          eq(importJobs.id, id),
+          eq(importJobs.userId, userId),
+          eq(importJobs.status, 'failed'),
+          isNull(importJobs.dismissedAt),
+        ),
+      )
+      .returning({ id: importJobs.id })
+      .all().length > 0
+  )
+}
+
+/**
+ * Limpa o histórico desta pessoa — 14/09/2026, pedido do dono.
+ *
+ * ── O que ela apaga, e o que ela NÃO toca ──────────────────────────────────
+ * Só linhas **terminadas**: `done`, `failed` e `cancelled`. O que está
+ * `running` fica, e não por zelo — apagar a linha de um trabalho vivo deixaria
+ * o executor escrevendo contadores numa linha que não existe, e a reconciliação
+ * de zumbis perderia a referência que usa para fechá-lo.
+ *
+ * ── Por que ela APAGA, em vez de esconder ──────────────────────────────────
+ * Porque é o que a palavra diz. Uma coluna `hidden_at` deixaria o banco
+ * crescendo para sempre com linhas que ninguém pode ver — e `import_jobs` já
+ * acumula: onze linhas em poucos dias de uso medidos em 14/09/2026. O histórico
+ * de import não sustenta nada (o `event_log` é quem guarda o que entrou, e ele
+ * não é tocado aqui), então não há o que preservar.
+ */
+export function clearHistory(userId: number): number {
+  return db
+    .delete(importJobs)
+    .where(and(eq(importJobs.userId, userId), ne(importJobs.status, 'running')))
     .returning({ id: importJobs.id })
     .all().length
 }

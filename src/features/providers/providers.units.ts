@@ -1,4 +1,5 @@
 import type { UnitMap } from '../../db/schema/providers.js'
+import { logger } from '../../lib/logger.js'
 import { prepareRequest } from './providers.auth.js'
 import { cacheKeyFor, readCache, writeCache } from './providers.cache.js'
 import { artUrl, asString, pathWithId, readPath } from './providers.client.js'
@@ -175,6 +176,7 @@ export async function fetchUnits({
         .filter((unit) => unit !== null)
       return { ok: true, units: units }
     } catch {
+      logger.warn({ provider: provider.slug }, 'provider units are not JSON')
       return { ok: false, reason: 'provider-error' }
     }
   }
@@ -208,11 +210,19 @@ export async function fetchUnits({
       forgetToken(provider.slug)
     }
     if (!response.ok) {
+      logger.warn(
+        { provider: provider.slug, status: response.status },
+        'provider refused units',
+      )
       return { ok: false, reason: 'provider-error' }
     }
 
     body = await response.text()
-  } catch {
+  } catch (error) {
+    logger.warn(
+      { provider: provider.slug, err: error },
+      'provider units unreachable',
+    )
     return { ok: false, reason: 'unreachable' }
   }
 

@@ -91,7 +91,7 @@ const getStatus = (cookie: string) =>
  * terminar — é a mesma cessão que o executor faz entre lotes.
  */
 async function esperarFim(): Promise<void> {
-  for (let i = 0; i < 50 && jobs.running(); i += 1) {
+  for (let i = 0; i < 50 && jobs.running('import'); i += 1) {
     await new Promise((r) => setImmediate(r))
   }
 }

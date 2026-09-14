@@ -38,5 +38,17 @@ const router = createRouter()
   // `/api/search`, e de propósito (`titles.public.ts`).
   .openapi(titlesRoutes.getEntryDetails, titlesHandlers.getEntryDetails)
   .openapi(titlesRoutes.getEntryUnits, titlesHandlers.getEntryUnits)
+  /**
+   * Reler o provedor para esta obra (item 11d). Mora aqui pelo mesmo motivo da
+   * arte e do detalhe: quem autoriza é a OBRA.
+   */
+  .openapi(titlesRoutes.refreshEntry, titlesHandlers.refreshEntry)
+  /**
+   * `POST /refresh` — a biblioteca inteira (item 11c). Como `DELETE /`, ela não
+   * colide com `/{id}/refresh`: um exige o segmento do id e o outro não.
+   */
+  .openapi(titlesRoutes.refreshLibrary, titlesHandlers.refreshLibrary)
+  /** `POST /fill` — preencher o que falta. Serve `Continue` e `Fill in`. */
+  .openapi(titlesRoutes.fillMissing, titlesHandlers.fillMissing)
 
 export default router

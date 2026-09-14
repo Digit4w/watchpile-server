@@ -172,3 +172,145 @@ export type GetProviderUnitsRoute = typeof getProviderUnits
 export type GetEntryUnitsRoute = typeof getEntryUnits
 export type GetProviderTitleRoute = typeof getProviderTitle
 export type GetEntryDetailsRoute = typeof getEntryDetails
+
+/* ── Refresh ──────────────────────────────────────────────────────────────── */
+
+const RefreshResultSchema = z
+  .object({
+    /**
+     * Quantas obras tiveram o total atualizado.
+     *
+     * **É o número que se confere contra a FONTE**, e por isso ele conta obras
+     * e não requisições: o que a pessoa quer saber é o que mudou na biblioteca
+     * dela, não quantas vezes falamos com o provedor (design system, seção 8 —
+     * *o número que a tela mostra tem que poder ser conferido*).
+     *
+     * Zero é resultado legítimo e comum: nada mudou desde a última leitura.
+     */
+    updated: z.number().int(),
+  })
+  .openapi('RefreshResult')
+
+/**
+ * Reler o provedor para UMA obra — 13/09/2026, item 11(d) da fila do dono.
+ *
+ * **Síncrona, ao contrário da varredura.** É uma obra: uma ida à rede, e quem
+ * clicou está olhando o menu esperando o número mudar. Um job aqui seria
+ * contabilidade mais cara que o trabalho, e é a mesma régua que deixa o
+ * aquecimento de uma obra sem contador.
+ *
+ * **404 quando a obra não tem vínculo** — não há de onde atualizar, e a tela
+ * anuncia isso antes do clique (o item nasce desabilitado com o motivo). A
+ * rota recusa assim mesmo, porque esconder o controle nunca foi proteção.
+ */
+export const refreshEntry = createRoute({
+  method: 'post',
+  path: '/{id}/refresh',
+  tags: ['Entries'],
+  request: {
+    params: z.object({ id: z.coerce.number().int().positive() }),
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: RefreshResultSchema } },
+      description: 'The provider was read again, and this is what changed',
+    },
+    401: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'No active session',
+    },
+    404: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'No such title, or it has no provider link to refresh from',
+    },
+  },
+})
+
+export type RefreshEntryRoute = typeof refreshEntry
+
+/** O job que a varredura abriu — a tela o acompanha por `/api/import/status`. */
+const RefreshStartedSchema = z
+  .object({
+    id: z.number().int(),
+    /** Quantas obras a varredura vai percorrer. */
+    total: z.number().int(),
+  })
+  .openapi('RefreshStarted')
+
+/**
+ * Reler o provedor para a biblioteca INTEIRA — item 11(c) da fila do dono.
+ *
+ * **Assíncrona, ao contrário da de uma obra**, e pelo motivo que separa as
+ * duas: mil obras levam dezenas de minutos, e nenhuma requisição HTTP espera
+ * isso. Responde 202 com o job, e a tela lê o progresso por
+ * `GET /api/import/status` — a mesma peça que já conta o import e o
+ * aquecimento.
+ *
+ * **409 quando já há uma varredura rodando**, que é o índice único por tipo
+ * respondendo. Um aquecimento em curso NÃO impede: são trabalhos de tipos
+ * diferentes, e recusar o gesto por causa do efeito colateral de um import
+ * anterior seria o automático vencendo o deliberado.
+ */
+export const refreshLibrary = createRoute({
+  method: 'post',
+  path: '/refresh',
+  tags: ['Entries'],
+  responses: {
+    202: {
+      content: { 'application/json': { schema: RefreshStartedSchema } },
+      description: 'The sweep started, and this is the job to watch',
+    },
+    401: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'No active session',
+    },
+    409: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'A sweep is already running',
+    },
+    422: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'Nothing in this library is linked to a provider',
+    },
+  },
+})
+
+export type RefreshLibraryRoute = typeof refreshLibrary
+
+/**
+ * Preencher o que falta — 14/09/2026, pedido do dono.
+ *
+ * **A mesma rota serve `Continue` e `Fill in missing`**, e não por economia: o
+ * aquecimento pula o que já está guardado, então retomar um trabalho
+ * interrompido é literalmente rodá-lo de novo. Duas rotas para o mesmo efeito
+ * seriam duas maneiras de perguntar a mesma coisa, e a segunda ficaria para
+ * trás no dia em que a regra mudasse.
+ *
+ * Responde **202 com o job**, como a varredura: preencher mil obras leva
+ * minutos, e nenhuma requisição HTTP espera isso.
+ */
+export const fillMissing = createRoute({
+  method: 'post',
+  path: '/fill',
+  tags: ['Entries'],
+  responses: {
+    202: {
+      content: { 'application/json': { schema: RefreshStartedSchema } },
+      description: 'The fill-in started, and this is the job to watch',
+    },
+    401: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'No active session',
+    },
+    409: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'Something is already filling in',
+    },
+    422: {
+      content: { 'application/json': { schema: MessageSchema } },
+      description: 'Nothing is missing',
+    },
+  },
+})
+
+export type FillMissingRoute = typeof fillMissing

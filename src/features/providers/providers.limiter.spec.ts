@@ -140,3 +140,91 @@ describe('`awaitToken`, que é o que a arte chama', () => {
     expect(await awaitToken('p', { perSecond: 100, burst: 2 }, 0)).toBe(true)
   })
 })
+
+/**
+ * A PRECEDÊNCIA do trabalho de fundo — 13/09/2026.
+ *
+ * O que estes testes protegem é a diferença entre "há fichas" e "há fichas
+ * SOBRANDO": o aquecimento (`art.warm.ts`) roda por minutos e chega sempre
+ * primeiro, então sem colchão ele esvazia o balde justo quando alguém abre a
+ * grade. Medido antes do conserto: uma grade fria de 20 cartas caía de 7
+ * servidas para 2 no AniList.
+ */
+describe('o trabalho de fundo cede a vez', () => {
+  /**
+   * A regra que ficou: o de fundo para antes de esvaziar o balde, e o que
+   * sobra é o que a tela encontra pronto ao abrir uma grade fria.
+   *
+   * O teste deriva o colchão do BURST em vez de cravar um número — o valor da
+   * reserva foi recalibrado em 13/09/2026 (0,5 → 0,2) depois de medir o custo
+   * dele, e um teste contra o número antigo teria quebrado sem que a regra
+   * tivesse mudado.
+   */
+  it('deixa um colchão que o primeiro plano encontra cheio', () => {
+    // `perSecond: 0` isola a regra do colchão da aritmética do tempo.
+    const teto = { perSecond: 0, burst: 10 }
+
+    let doFundo = 0
+    for (let i = 0; i < 20; i += 1) {
+      if (reserveToken('bg', 0, teto, 0, true) === 0) {
+        doFundo += 1
+      }
+    }
+
+    // Ele para antes do fim, e o que sobra não é zero.
+    expect(doFundo).toBeGreaterThan(0)
+    expect(doFundo).toBeLessThan(teto.burst)
+
+    // E o que sobrou é servido a quem tem alguém esperando.
+    const sobra = teto.burst - doFundo
+    for (let i = 0; i < sobra; i += 1) {
+      expect(reserveToken('bg', 0, teto, 0, false)).toBe(0)
+    }
+    expect(reserveToken('bg', 0, teto, 0, false)).toBeNull()
+  })
+
+  /**
+   * **O de fundo DEBITA**, e isso é o que mantém o teto do provedor de pé.
+   *
+   * A versão anterior o fazia dormir sem debitar e tentar de novo; o laço de
+   * retry saiu em 13/09/2026, e sem o débito ele passaria a pedir sem limite
+   * nenhum — que é o defeito oposto ao que o colchão veio evitar.
+   */
+  it('gasta a ficha que pegou, como todo mundo', () => {
+    const teto = { perSecond: 0, burst: 10 }
+
+    /**
+     * **O teste conta o TOTAL que o balde entrega**, e é isso que distingue as
+     * duas implementações: se o de fundo não debitasse, o balde entregaria as
+     * fichas dele *além* das dez — e a primeira versão deste teste passava nos
+     * dois casos porque só olhava o resto, que continua menor que o burst de um
+     * jeito ou de outro.
+     */
+    let doFundo = 0
+    while (reserveToken('debita', 0, teto, 0, true) === 0) {
+      doFundo += 1
+      if (doFundo > 50)
+        throw new Error('o de fundo não debita: balde sem fundo')
+    }
+
+    let doPrimeiroPlano = 0
+    while (reserveToken('debita', 0, teto, 0, false) === 0) {
+      doPrimeiroPlano += 1
+      if (doPrimeiroPlano > 50) throw new Error('balde sem fundo')
+    }
+
+    // As duas metades somam o burst, nem uma ficha a mais.
+    expect(doFundo + doPrimeiroPlano).toBe(teto.burst)
+    expect(doFundo).toBeGreaterThan(0)
+  })
+
+  it('quem tem alguém esperando não paga o colchão', () => {
+    const teto = { perSecond: 0, burst: 5 }
+
+    // As cinco saem, porque o piso do primeiro plano é zero.
+    for (let i = 0; i < 5; i += 1) {
+      expect(reserveToken('fg', 0, teto, 0, false)).toBe(0)
+    }
+    expect(reserveToken('fg', 0, teto, 0, false)).toBeNull()
+  })
+})

@@ -1,3 +1,4 @@
+import { logger } from '../../lib/logger.js'
 import type { AppRouteHandler } from '../../lib/types.js'
 import {
   type DownloadState,
@@ -110,6 +111,10 @@ export const install: AppRouteHandler<InstallRoute> = async (c) => {
    * requisição pendurada até a conexão cair, e a tela leria isso como falha do
    * que na verdade deu certo.
    */
-  void Promise.resolve(installer.apply(file)).catch(() => {})
+  void Promise.resolve(installer.apply(file)).catch((error: unknown) => {
+    // A resposta já saiu como 202, então a tela não tem como saber que falhou —
+    // o log é o único lugar onde isto aparece.
+    logger.error({ file, err: error }, 'update install failed')
+  })
   return c.json({ message: 'Applying' }, 202)
 }

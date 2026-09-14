@@ -58,6 +58,36 @@ function configFor(slug: string): LimiterConfig {
  * sai com um instante próprio. É isso que transforma uma multidão numa fila, e
  * a ordem dela é a de chegada.
  */
+/**
+ * Quanto do balde o trabalho de FUNDO nunca encosta — 13/09/2026.
+ *
+ * ── O que foi medido, e o que ele conserta ──────────────────────────────────
+ * O aquecimento e a tela disputavam o mesmo balde **sem precedência nenhuma**,
+ * e quem chegou primeiro levava. Medido em 13/09/2026 com uma grade fria de 20
+ * cartas e `maxWait` de 5s: no AniList (0,5/s) o aquecimento derrubava as
+ * servidas de **7 para 2**; no MyAnimeList e no Kitsu (3/s) ele não atrapalhava,
+ * porque a latência real da rede já o segura em 1,07/s de um orçamento de 3.
+ *
+ * ── Por que uma FRAÇÃO do burst, e não uma taxa ─────────────────────────────
+ * O que a tela precisa não é de vazão — é de **fichas prontas no instante em
+ * que alguém abre a grade**. Uma cota por segundo não guarda nada para esse
+ * instante; um piso no balde guarda. Como o burst já é declarado por provedor,
+ * a reserva acompanha quem ele é sem um segundo número para calibrar.
+ *
+ * ── 0,2 e não 0,5, e o número saiu de MEDIR o custo — 13/09/2026 ───────────
+ * A primeira versão reservava metade do burst, calibrada contra o AniList
+ * (0,5/s), onde a disputa realmente machuca. Medido num provedor a 3/s com uma
+ * biblioteca de 1.442 obras, ela custava caro e protegia pouco: o aquecimento
+ * andava a **0,54 obras/s — 18% do orçamento** —, e uma grade fria levava o
+ * MESMO tempo com ele rodando (2,97s) e sem ele (2,78s).
+ *
+ * O colchão alto não estava evitando disputa; estava só prolongando o período
+ * em que a biblioteca fica fria — que é justamente quando cada carta custa uma
+ * ida à rede. **Proteger a tela devagar demais é deixá-la desprotegida por mais
+ * tempo.**
+ */
+const BACKGROUND_RESERVE = 0.2
+
 export function reserveToken(
   slug: string,
   now = Date.now(),
@@ -71,6 +101,16 @@ export function reserveToken(
   declared?: LimiterConfig | null,
   /** Quanto quem pede aguenta esperar. Zero é o comportamento de sempre. */
   maxWaitMs = 0,
+  /**
+   * Este pedido é de trabalho de FUNDO — ninguém está esperando por ele.
+   *
+   * Duas consequências, e as duas existem para que a tela nunca espere por
+   * causa do aquecimento: ele deixa um colchão de fichas intocado, e **nunca
+   * gasta ficha do futuro**. Reservar futuro é o que transforma uma multidão
+   * numa fila, e uma fila de mil obras na frente de quem abriu a grade é
+   * exatamente o que não pode acontecer.
+   */
+  background = false,
 ): number | null {
   const { perSecond, burst } = declared ?? configFor(slug)
   const bucket = buckets.get(slug) ?? { tokens: burst, lastRefill: now }
@@ -81,7 +121,10 @@ export function reserveToken(
   bucket.tokens = Math.min(burst, bucket.tokens + elapsed * perSecond)
   bucket.lastRefill = now
 
-  if (bucket.tokens >= 1) {
+  /** O piso que este pedido respeita: zero para quem tem alguém esperando. */
+  const floor = background ? burst * BACKGROUND_RESERVE : 0
+
+  if (bucket.tokens >= 1 + floor) {
     bucket.tokens -= 1
     buckets.set(slug, bucket)
     return 0
@@ -93,13 +136,28 @@ export function reserveToken(
     return null
   }
 
-  const waitMs = ((1 - bucket.tokens) / perSecond) * 1000
+  const waitMs = ((1 + floor - bucket.tokens) / perSecond) * 1000
   if (waitMs > maxWaitMs) {
     // Guarda o reenchimento e **não debita**: quem desistiu não gastou nada.
     buckets.set(slug, bucket)
     return null
   }
 
+  /**
+   * **Todo mundo debita, inclusive o de fundo** — 13/09/2026.
+   *
+   * A primeira versão fazia o de fundo dormir sem debitar e tentar de novo, para
+   * que uma fila de mil obras não tomasse a frente de quem abriu a grade. O
+   * argumento estava errado sobre o próprio consumidor: **o aquecimento é um
+   * laço SEQUENCIAL**, que pede a ficha seguinte só depois de terminar a obra
+   * anterior — ele nunca tem mais de um pedido no ar, então não havia fila a
+   * evitar. O que aquele retry produzia era espera repetida, e foi parte do
+   * aquecimento andar a 18% do orçamento do provedor.
+   *
+   * Quem separa os dois agora é só o colchão, que é a parte que se mediu servir.
+   * E o débito é o que mantém o teto do provedor de pé: sem ele, com o laço de
+   * retry removido, o de fundo sairia daqui sem nunca gastar uma ficha.
+   */
   bucket.tokens -= 1
   buckets.set(slug, bucket)
   return waitMs
@@ -139,8 +197,10 @@ export async function awaitToken(
   slug: string,
   declared: LimiterConfig | null | undefined,
   maxWaitMs: number,
+  /** Ver `reserveToken`: deixa o colchão de pé para quem tem alguém esperando. */
+  background = false,
 ): Promise<boolean> {
-  const waitMs = reserveToken(slug, Date.now(), declared, maxWaitMs)
+  const waitMs = reserveToken(slug, Date.now(), declared, maxWaitMs, background)
   if (waitMs === null) {
     return false
   }

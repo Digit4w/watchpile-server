@@ -97,8 +97,51 @@ export const importJobs = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
 
-    /** De onde se leu. Ver o bloco acima: fonte de import ≠ provedor. */
-    source: text('source', { enum: ['anilist', 'mal', 'csv'] }).notNull(),
+    /**
+     * Que trabalho esta linha é — 13/09/2026.
+     *
+     * `import` lê uma fonte e escreve obras; `enrich` busca arte e snapshot das
+     * obras que o import acabou de trazer (`art.warm.ts`). **São duas fases com
+     * dois contadores**, e não um número só: somá-los desfaria a decisão de
+     * 07/09 (segurar o `done` no aquecimento faria uma CDN fora do ar reprovar
+     * um import que deu certo) e cairia na régua de *número que soma dois
+     * motivos não confere nada*.
+     *
+     * **`refresh` é o terceiro, e não é `enrich` com um parâmetro** — 13/09/2026.
+     * Eles percorrem o mesmo caminho, e é por isso que compartilham `warmArt`;
+     * o que difere é a PERGUNTA: aquecer é *"o que falta?"* e roda atrás de um
+     * import, refrescar é *"o que mudou?"* e roda porque alguém pediu. A tela
+     * diz coisas diferentes sobre cada um, e o índice único por tipo deixa os
+     * dois coexistirem — recusar a varredura que alguém pediu porque um
+     * aquecimento automático ainda não acabou seria o gesto perdendo para o
+     * efeito colateral.
+     *
+     * **Sem migration:** o enum do Drizzle é tipagem, e a `0053` criou a coluna
+     * sem `CHECK`. Um valor novo não muda o banco.
+     *
+     * O `enrich` herda a tabela inteira em vez de ganhar a sua: `status`,
+     * `total`, `processed`, o carimbo de cancelamento e a reconciliação de
+     * zumbi já existem aqui, e uma segunda tabela copiaria as seis colunas e as
+     * duas regras. O nome `import_jobs` fica mais estreito que o conteúdo, e
+     * isso é dívida de NOME — barata perto de manter dois esquemas em paralelo.
+     */
+    kind: text('kind', { enum: ['import', 'enrich', 'refresh'] })
+      .notNull()
+      .default('import'),
+
+    /**
+     * De onde se leu. Ver o bloco acima: fonte de import ≠ provedor.
+     *
+     * No `enrich` ela é a fonte do import que o originou, e serve de
+     * procedência: é o que deixa a tela dizer de qual importação aquele
+     * aquecimento veio.
+     *
+     * **Nula no `refresh`** (`0054`), e a nulidade é o dado certo: uma
+     * varredura relê os provedores que as obras já apontam — vários dentro do
+     * mesmo job —, então não há uma fonte. Escolher um valor do enum para
+     * satisfazer um `NOT NULL` seria mentira plausível no banco.
+     */
+    source: text('source', { enum: ['anilist', 'mal', 'csv'] }),
 
     /** O que fazer com a obra que já está na biblioteca. */
     mode: text('mode', { enum: ['skip', 'overwrite'] }).notNull(),
@@ -154,6 +197,18 @@ export const importJobs = sqliteTable(
     errorKind: text('error_kind'),
     errorParams: text('error_params').notNull().default('{}'),
 
+    /**
+     * Quando alguém dispensou o aviso de um trabalho interrompido — 14/09/2026.
+     *
+     * **Dispensar não é apagar**: a linha fica no histórico e o que sai é o
+     * pedido de atenção na tela, que é a mesma distinção entre lido e
+     * dispensado que `notifications` faz.
+     *
+     * Carimbo e não booleano, como `cancel_requested_at` e `pinned_at`: *quando*
+     * é um fato que um `1` perderia, e o `NULL` já significa "não dispensado".
+     */
+    dismissedAt: integer('dismissed_at', { mode: 'timestamp' }),
+
     startedAt: integer('started_at', { mode: 'timestamp' })
       .notNull()
       .default(sql`(unixepoch())`),
@@ -162,13 +217,25 @@ export const importJobs = sqliteTable(
   },
   (table) => [
     /**
-     * **Uma importação por vez, na instalação inteira.** Como só uma linha pode
-     * ter `status = 'running'`, o banco recusa a segunda em vez de o código
-     * consultar-e-inserir. O índice é parcial, então ele indexa só a linha viva
-     * — nunca as milhares já terminadas.
+     * **Um trabalho de cada TIPO por vez, na instalação inteira.** Como só uma
+     * linha pode ter cada `(status, kind)` com `status = 'running'`, o banco
+     * recusa a segunda em vez de o código consultar-e-inserir. O índice é
+     * parcial, então ele indexa só as linhas vivas — nunca as milhares já
+     * terminadas.
+     *
+     * **`kind` entrou na chave em 13/09/2026, e não é detalhe.** Antes ele
+     * indexava só `status`, o que valia "uma linha `running` na instalação". No
+     * instante em que o aquecimento virou job, isso passaria a significar que um
+     * `enrich` de 52 minutos **recusa todo import novo** durante uma hora.
+     *
+     * O argumento original é o que decide a forma, não o que cai: "uma por vez"
+     * existe porque o IMPORT congela o servidor — escrita síncrona do
+     * `better-sqlite3`, medida em 14,2ms por lote de 200 em 13/09/2026. O
+     * aquecimento não escreve em lote; ele é I/O de rede com pausa entre obras.
+     * Então os dois coexistem, e o que segue proibido é **dois do mesmo tipo**.
      */
     uniqueIndex('import_jobs_one_running')
-      .on(table.status)
+      .on(table.status, table.kind)
       .where(sql`${table.status} = 'running'`),
 
     /** "A minha última importação" é a consulta que a tela sempre faz. */

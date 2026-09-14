@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Watchpile API",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "components": {
     "schemas": {
@@ -157,6 +157,27 @@
         },
         "required": ["deleted"]
       },
+      "RefreshResult": {
+        "type": "object",
+        "properties": {
+          "updated": {
+            "type": "integer"
+          }
+        },
+        "required": ["updated"]
+      },
+      "RefreshStarted": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "required": ["id", "total"]
+      },
       "ImportStatus": {
         "type": "object",
         "properties": {
@@ -174,9 +195,26 @@
           },
           "latest": {
             "$ref": "#/components/schemas/ImportJob"
+          },
+          "enriching": {
+            "$ref": "#/components/schemas/ImportJob"
+          },
+          "refreshing": {
+            "$ref": "#/components/schemas/ImportJob"
+          },
+          "pending": {
+            "type": "integer"
           }
         },
-        "required": ["sources", "running", "mine", "latest"]
+        "required": [
+          "sources",
+          "running",
+          "mine",
+          "latest",
+          "enriching",
+          "refreshing",
+          "pending"
+        ]
       },
       "ImportSource": {
         "type": "object",
@@ -203,9 +241,14 @@
           "id": {
             "type": "integer"
           },
+          "kind": {
+            "type": "string",
+            "enum": ["import", "enrich", "refresh"]
+          },
           "source": {
             "type": "string",
-            "enum": ["anilist", "mal", "csv"]
+            "nullable": true,
+            "enum": ["anilist", "mal", "csv", null]
           },
           "mode": {
             "type": "string",
@@ -275,6 +318,10 @@
             "type": "string",
             "nullable": true
           },
+          "dismissedAt": {
+            "type": "string",
+            "nullable": true
+          },
           "startedAt": {
             "type": "string"
           },
@@ -285,6 +332,7 @@
         },
         "required": [
           "id",
+          "kind",
           "source",
           "mode",
           "status",
@@ -299,6 +347,7 @@
           "errorKind",
           "errorParams",
           "cancelRequestedAt",
+          "dismissedAt",
           "startedAt",
           "finishedAt"
         ]
@@ -334,6 +383,79 @@
           }
         },
         "required": ["kind"]
+      },
+      "LogPage": {
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogLine"
+            }
+          },
+          "hasOlder": {
+            "type": "boolean"
+          },
+          "usage": {
+            "type": "object",
+            "properties": {
+              "files": {
+                "type": "integer"
+              },
+              "bytes": {
+                "type": "integer"
+              },
+              "limitBytes": {
+                "type": "integer"
+              }
+            },
+            "required": ["files", "bytes", "limitBytes"]
+          }
+        },
+        "required": ["lines", "hasOlder", "usage"]
+      },
+      "LogLine": {
+        "type": "object",
+        "properties": {
+          "time": {
+            "type": "number"
+          },
+          "level": {
+            "type": "integer"
+          },
+          "msg": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "nullable": true
+            }
+          },
+          "err": {
+            "$ref": "#/components/schemas/LogError"
+          }
+        },
+        "required": ["time", "level", "msg", "fields", "err"]
+      },
+      "LogError": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "type": {
+            "type": "string",
+            "nullable": true
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "stack": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": ["type", "message", "stack"]
       },
       "ServerMeta": {
         "type": "object",
@@ -3464,6 +3586,197 @@
         }
       }
     },
+    "/api/entries/{id}/refresh": {
+      "post": {
+        "tags": ["Entries"],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "exclusiveMinimum": true
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The provider was read again, and this is what changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such title, or it has no provider link to refresh from",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/entries/refresh": {
+      "post": {
+        "tags": ["Entries"],
+        "responses": {
+          "202": {
+            "description": "The sweep started, and this is the job to watch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshStarted"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A sweep is already running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Nothing in this library is linked to a provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/entries/fill": {
+      "post": {
+        "tags": ["Entries"],
+        "responses": {
+          "202": {
+            "description": "The fill-in started, and this is the job to watch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshStarted"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Something is already filling in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Nothing is missing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/export/entries.csv": {
       "get": {
         "tags": ["Export"],
@@ -4886,6 +5199,234 @@
           },
           "409": {
             "description": "There is nothing of yours running to stop",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/import/{id}/dismiss": {
+      "post": {
+        "tags": ["Import"],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "exclusiveMinimum": true
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The job, now dismissed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJob"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such job to dismiss",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/import/history": {
+      "delete": {
+        "tags": ["Import"],
+        "responses": {
+          "200": {
+            "description": "How many finished jobs were removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": ["deleted"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/logs": {
+      "get": {
+        "tags": ["Logs"],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": ["all", "warn", "error"],
+              "default": "all"
+            },
+            "required": false,
+            "name": "level",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "number",
+              "nullable": true
+            },
+            "required": false,
+            "name": "before",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "number",
+              "nullable": true
+            },
+            "required": false,
+            "name": "after",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The newest log lines that match the filter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "This is set by the server admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/logs/download": {
+      "get": {
+        "tags": ["Logs"],
+        "responses": {
+          "200": {
+            "description": "Every log file this server kept, oldest first, as JSON Lines",
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "This is set by the server admin",
             "content": {
               "application/json": {
                 "schema": {
