@@ -11,6 +11,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
+    "preview": "bun run --cwd ../client build && cross-env WATCHPILE_CLIENT_DIST_PATH=../client/dist tsx src/index.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",

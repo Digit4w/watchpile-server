@@ -149,6 +149,35 @@ export const db = drizzle(sqlite)
 
 Migration gerada pelo `drizzle-kit` e a alteração em `src/db/schema.ts` **andam no mesmo commit**. Um sem o outro produz um histórico que não reproduz o banco.
 
+### `bun run preview` — rodar como o usuário roda
+
+13/09/2026. Builda o cliente e sobe o servidor servindo aquele build, num
+comando só. Existe porque **medir performance no `vite dev` mede a coisa
+errada**, e isso custou um ciclo inteiro de diagnóstico.
+
+Medido naquele dia, no mesmo gesto (abrir uma obra e voltar) com 1.442 obras:
+
+| | `vite dev` | este script |
+| --- | --- | --- |
+| Voltar para `/library` | **120–140ms** de interface parada, toda vez | **nenhuma tarefa longa** |
+| Heap na mesma navegação | ~100 MB | **13 MB** |
+
+A diferença não é o Vite: é o **React em modo de desenvolvimento**, que monta
+cada componente duas vezes por causa do `StrictMode` (no-op em produção) e
+carrega o build não minificado. Nenhuma troca de bundler ou de runtime muda
+isso — `bun` no lugar do Node acelera o BOOT do dev server em ~0,3s e o resto
+fica igual, e no servidor ele nem roda (o `better-sqlite3` dá
+`panic: NAPI FATAL ERROR`).
+
+**O que ele NÃO é:** produção de verdade. O servidor continua rodando por `tsx`,
+não pelo `dist/`. Isso é de propósito — o que se quer observar é a TELA, e o
+servidor responde em milissegundos nos dois modos (6ms para 1.442 obras,
+medido). Empacotamento real é `electron:build` ou a imagem Docker.
+
+**Quando usar:** ao avaliar se algo está lento, antes de concluir que está.
+Para escrever código o `dev` continua sendo o certo — o HMR é o que se ganha
+ali, e o custo de montagem só aparece ao navegar, não ao editar.
+
 ### Seed de desenvolvimento
 
 `bun run db:seed` (29/08/2026) enche o banco com obras e pilhas de mentira, pra
