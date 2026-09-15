@@ -11,7 +11,7 @@ espírito de Yamtrack, Trakt e Suwayomi. Um servidor, múltiplos clientes: este
 repositório expõe uma API HTTP documentada (`openapi.json`) e, por padrão,
 também serve o cliente web oficial.
 
-> **Estado atual: `v0.2.1`, uma versão pública de teste.** Há imagem
+> **Estado atual: `v0.2.2`, uma versão pública de teste.** Há imagem
 > publicada e instaladores prontos — as seções abaixo abrem por eles, e o build
 > a partir do código-fonte continua documentado logo em seguida.
 >
@@ -43,14 +43,14 @@ separado — o SQLite é um arquivo no volume.
 
 ```bash
 docker run -d --name watchpile -p 3210:3210 -v ./data:/data \
-  ghcr.io/digit4w/watchpile:0.2.1
+  ghcr.io/digit4w/watchpile:0.2.2
 ```
 
 Ou baixe só o `compose.yaml` deste repositório e troque `build: .` por
-`image: ghcr.io/digit4w/watchpile:0.2.1`. **Não precisa clonar nada** — a
+`image: ghcr.io/digit4w/watchpile:0.2.2`. **Não precisa clonar nada** — a
 imagem já traz o cliente web embutido.
 
-**Duas tags, e a escolha é sobre atualizar:** `:0.2.1` é o que se fixa num
+**Duas tags, e a escolha é sobre atualizar:** `:0.2.2` é o que se fixa num
 `compose.yaml` que não pode mudar sozinho; `:latest` acompanha. Enquanto o
 projeto estiver em `0.x`, `:latest` pode trazer mudança que quebra — ver o
 aviso lá em cima.
